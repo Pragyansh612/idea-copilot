@@ -2052,7 +2052,10 @@ p.lede {
 }
 .footer-col ul { list-style: none; display: flex; flex-direction: column; gap: 10px; }
 .footer-col li { font-size: 13.5px; color: var(--fg-2); cursor: pointer; transition: color .15s; }
-.footer-col li:hover { color: var(--fg); }
+.footer-col li a { color: inherit; text-decoration: none; }
+.footer-col li:hover, .footer-col li a:hover { color: var(--fg); }
+.footer-bottom a { color: var(--fg-2); text-decoration: none; }
+.footer-bottom a:hover { color: var(--accent); }
 .footer-bottom {
   display: flex; justify-content: space-between; align-items: center;
   padding-top: 22px;

@@ -1,20 +1,26 @@
 'use client'
 import './dashboard.css'
 import { usePathname, useRouter } from 'next/navigation'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTheme } from '@/hooks/useTheme'
+import { useAuth } from '@/hooks/useAuth'
+import { IdeaAPI } from '@/lib/api/idea'
+import { NotificationAPI } from '@/lib/api/notification'
+import { UserAPI, type UserProfile } from '@/lib/api/user'
+import { displayName } from '@/lib/dashboard/format'
+import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
 const ROUTES = [
-  { id: 'home',     label: 'Dashboard',               icon: <DI.Home/>,   section: 'Workspace',     href: '/dashboard' },
-  { id: 'ideas',    label: 'My Ideas',                icon: <DI.Bulb/>,   section: 'Workspace',     href: '/dashboard/ideas',        count: 24 },
-  { id: 'copilot',  label: 'AI Copilot',              icon: <DI.Spark/>,  section: 'Intelligence',  href: '/dashboard/copilot' },
-  { id: 'comp',     label: 'Competitor Intelligence', icon: <DI.Radar/>,  section: 'Intelligence',  href: '/dashboard/competitors' },
-  { id: 'gaps',     label: 'Market Gaps',             icon: <DI.Target/>, section: 'Intelligence',  href: '/dashboard/gaps',         count: 3 },
-  { id: 'roadmaps', label: 'Roadmaps',                icon: <DI.Route/>,  section: 'Intelligence',  href: '/dashboard/roadmaps' },
-  { id: 'notifs',   label: 'Notifications',           icon: <DI.Bell/>,   section: 'Account',       href: '/dashboard/notifications', count: 5 },
-  { id: 'exports',  label: 'Exports',                 icon: <DI.Export/>, section: 'Account',       href: '/dashboard/exports' },
-  { id: 'settings', label: 'Settings',                icon: <DI.Cog/>,    section: 'Account',       href: '/dashboard/settings' },
+  { id: 'home',     label: 'Dashboard',               icon: <DI.Home/>,   section: 'Workspace',     href: '/dashboard', countKey: null as string | null },
+  { id: 'ideas',    label: 'My Ideas',                icon: <DI.Bulb/>,   section: 'Workspace',     href: '/dashboard/ideas', countKey: 'ideas' },
+  { id: 'copilot',  label: 'AI Copilot',              icon: <DI.Spark/>,  section: 'Intelligence',  href: '/dashboard/copilot', countKey: null },
+  { id: 'comp',     label: 'Competitor Intelligence', icon: <DI.Radar/>,  section: 'Intelligence',  href: '/dashboard/competitors', countKey: null },
+  { id: 'gaps',     label: 'Market Gaps',             icon: <DI.Target/>, section: 'Intelligence',  href: '/dashboard/gaps', countKey: null },
+  { id: 'roadmaps', label: 'Roadmaps',                icon: <DI.Route/>,  section: 'Intelligence',  href: '/dashboard/roadmaps', countKey: null },
+  { id: 'notifs',   label: 'Notifications',           icon: <DI.Bell/>,   section: 'Account',       href: '/dashboard/notifications', countKey: 'notifs' },
+  { id: 'exports',  label: 'Exports',                 icon: <DI.Export/>, section: 'Account',       href: '/dashboard/exports', countKey: null },
+  { id: 'settings', label: 'Settings',                icon: <DI.Cog/>,    section: 'Account',       href: '/dashboard/settings', countKey: null },
 ]
 
 function getActiveId(pathname: string) {
@@ -32,8 +38,10 @@ function getActiveId(pathname: string) {
 
 function getCrumbs(pathname: string): string[] {
   if (pathname === '/dashboard') return ['Dashboard']
+  if (pathname === routes.newIdea) return ['My Ideas', 'New idea']
   if (pathname.startsWith('/dashboard/ideas/')) {
     const id = decodeURIComponent(pathname.split('/dashboard/ideas/')[1])
+    if (id === 'new') return ['My Ideas', 'New idea']
     return ['My Ideas', id]
   }
   const r = ROUTES.find(r => r.href === pathname)
@@ -42,23 +50,54 @@ function getCrumbs(pathname: string): string[] {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [theme, toggleTheme] = useTheme()
+  const { logout } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
   const activeId = getActiveId(pathname)
   const crumbs = getCrumbs(pathname)
   const contentRef = useRef<HTMLDivElement>(null)
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [ideaCount, setIdeaCount] = useState(0)
+  const [unreadCount, setUnreadCount] = useState(0)
 
-  // scroll content to top on route change
   useEffect(() => {
     contentRef.current?.scrollTo(0, 0)
   }, [pathname])
 
-  function logout() {
-    document.cookie = 'ic-auth=; path=/; max-age=0'
-    router.push('/login')
-  }
+  useEffect(() => {
+    let cancelled = false
+    async function loadNavMeta() {
+      try {
+        const [prof, ideas, notifs] = await Promise.all([
+          UserAPI.getProfile(),
+          IdeaAPI.getIdeas({ limit: 1 }),
+          NotificationAPI.getNotifications(true),
+        ])
+        if (cancelled) return
+        setProfile(prof)
+        setIdeaCount(ideas.total)
+        setUnreadCount(notifs.unread_count)
+      } catch {
+        if (!cancelled) {
+          setProfile(null)
+          setIdeaCount(0)
+          setUnreadCount(0)
+        }
+      }
+    }
+    loadNavMeta()
+    return () => { cancelled = true }
+  }, [pathname])
 
+  const name = displayName(profile?.email, profile?.display_name)
   const sections = ['Workspace', 'Intelligence', 'Account']
+
+  function routeCount(key: string | null) {
+    if (!key) return undefined
+    if (key === 'ideas' && ideaCount > 0) return ideaCount
+    if (key === 'notifs' && unreadCount > 0) return unreadCount
+    return undefined
+  }
 
   return (
     <div className="app">
@@ -82,7 +121,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                 >
                   {r.icon}
                   <span>{r.label}</span>
-                  {r.count != null && <span className="sb-count">{r.count}</span>}
+                  {routeCount(r.countKey) != null && <span className="sb-count">{routeCount(r.countKey)}</span>}
                 </button>
               ))}
             </div>
@@ -93,20 +132,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="sb-upgrade">
             <div className="ub-title">Upgrade to <em>Founder</em></div>
             <div className="ub-desc">Unlimited Copilot calls, live competitor pull, priority models.</div>
-            <a className="ub-cta" style={{ cursor: 'pointer' }}>Start free trial <DI.Arrow/></a>
+            <button type="button" className="ub-cta" style={{ cursor: 'pointer', border: 0, background: 'none', font: 'inherit', padding: 0, color: 'inherit' }} onClick={() => router.push(routes.settings)}>Upgrade plan <DI.Arrow/></button>
           </div>
-          <div className="sb-ws">
-            <div className="ws-icon">AB</div>
+          <div className="sb-ws" onClick={() => router.push(routes.settings)} style={{ cursor: 'pointer' }} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && router.push(routes.settings)}>
+            <div className="ws-icon">{name.slice(0, 2).toUpperCase()}</div>
             <div className="ws-meta">
-              <div className="ws-name">Alex&apos;s Lab</div>
-              <div className="ws-plan">FREE · 3/3 ideas</div>
+              <div className="ws-name">{name}&apos;s Lab</div>
+              <div className="ws-plan">{ideaCount} idea{ideaCount === 1 ? '' : 's'}</div>
             </div>
             <span className="ws-caret"><DI.Caret/></span>
           </div>
           <div className="sb-user" onClick={logout} title="Click to sign out">
             <div className="av" />
             <div className="who">
-              <div className="name">Alex Brennan</div>
+              <div className="name">{name}</div>
               <div className="role">founder · solo</div>
             </div>
             <span className="menu"><DI.Dots/></span>
@@ -121,7 +160,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <div className="tb-crumbs">
             <a href="/" style={{ color: 'var(--fg-3)' }}>Site</a>
             <span className="sep">/</span>
-            <span>Alex&apos;s Lab</span>
+            <span>{name}&apos;s Lab</span>
             {crumbs.map((c, i) => (
               <span key={i}>
                 <span className="sep">/</span>
@@ -137,12 +176,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="tb-actions">
-            <button className="tb-cta" onClick={() => router.push('/dashboard/ideas')}>
+            <button className="tb-cta" onClick={() => router.push(routes.newIdea)}>
               <DI.Plus /> New idea
             </button>
             <div className="tb-divider" />
-            <button className="tb-btn" title="AI Command"><DI.Bolt /></button>
-            <button className="tb-btn has-dot" onClick={() => router.push('/dashboard/notifications')} title="Notifications">
+            <button className="tb-btn" title="AI Copilot" onClick={() => router.push(routes.copilot)}><DI.Bolt /></button>
+            <button className="tb-btn has-dot" onClick={() => router.push(routes.notifications)} title="Notifications">
               <DI.Bell />
             </button>
             <button className="tb-btn" onClick={toggleTheme} title="Toggle theme">

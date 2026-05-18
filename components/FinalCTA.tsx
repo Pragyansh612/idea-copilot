@@ -1,4 +1,6 @@
+import Link from 'next/link'
 import { IconArrow } from './Icons'
+import { routes } from '@/lib/routes'
 
 export default function FinalCTA() {
   return (
@@ -9,8 +11,8 @@ export default function FinalCTA() {
         <h2>Build <em>smarter</em><br />ideas.</h2>
         <p>Your AI copilot for startup thinking, validation and execution. Bring the spark — we&apos;ll handle the strategy.</p>
         <div className="cta-row">
-          <a className="btn btn-primary" href="#">Get started — free <IconArrow /></a>
-          <a className="btn btn-ghost" href="#">Read the manifesto</a>
+          <Link className="btn btn-primary" href={routes.signup}>Get started — free <IconArrow /></Link>
+          <Link className="btn btn-ghost" href={routes.why}>Why IdeaCopilot</Link>
         </div>
       </div>
     </section>

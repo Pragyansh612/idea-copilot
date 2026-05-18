@@ -1,19 +1,25 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-export function middleware(req: NextRequest) {
-  const auth = req.cookies.get('ic-auth')?.value
-  const { pathname } = req.nextUrl
+export function middleware(request: NextRequest) {
+  const path = request.nextUrl.pathname
+  const isDashboardPath = path.startsWith('/dashboard')
+  const isAuthPath = path.startsWith('/login') || path.startsWith('/signup')
+  const token = request.cookies.get('access_token')?.value || ''
 
-  if (pathname.startsWith('/dashboard') && auth !== '1') {
-    return NextResponse.redirect(new URL('/login', req.url))
+  if (isDashboardPath && !token) {
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('redirect', path)
+    return NextResponse.redirect(loginUrl)
   }
-  if (pathname === '/login' && auth === '1') {
-    return NextResponse.redirect(new URL('/dashboard', req.url))
+
+  if (isAuthPath && token) {
+    return NextResponse.redirect(new URL('/dashboard', request.url))
   }
+
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/login'],
+  matcher: ['/dashboard/:path*', '/login', '/signup'],
 }

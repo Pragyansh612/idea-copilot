@@ -1,121 +1,149 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
+import {
+  AIAPI,
+  CompetitorAPI,
+  FeatureAPI,
+  IdeaAPI,
+  type AISuggestion,
+  type Feature,
+  type Idea,
+  type Phase,
+} from '@/lib/api/idea'
+import { formatDate, ideaScore, priorityShort, statusLabel, timeAgo } from '@/lib/dashboard/format'
+import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
-
-const FEATURES = [
-  { p: 'P0', label: 'Async voice notes (≤60s)',       done: true,  est: '2w' },
-  { p: 'P0', label: 'Block-verified address gating',  done: true,  est: '1w' },
-  { p: 'P0', label: 'Ephemeral 24-hour feed',         done: false, est: '1w' },
-  { p: 'P0', label: 'Anonymous reactions + reports',  done: false, est: '3d' },
-  { p: 'P1', label: 'Moderation primitives',          done: false, est: '2w' },
-  { p: 'P1', label: 'Onboarding · organizer-first',   done: false, est: '1w' },
-  { p: 'P1', label: 'Quiet hours · per-block',        done: false, est: '3d' },
-  { p: 'P2', label: 'Voice-to-text caption',          done: false, est: 'later' },
-  { p: 'P2', label: 'Audio reactions (laughs/claps)', done: false, est: 'later' },
-]
-
-const PHASES = [
-  { name: 'Validate',      when: 'Week 1–2',  state: 'done',   desc: '12 interviews with apartment-block organizers across 4 cities.',            meta: { Interviews: 12, Cities: 4 } },
-  { name: 'Prototype',     when: 'Week 3–5',  state: 'done',   desc: 'Voice memo MVP in a 3-block radius. Internal alpha with 8 testers.',        meta: { Testers: 8, Crashes: 0 } },
-  { name: 'Closed beta',   when: 'Week 6–10', state: 'active', desc: '200 users · 4 neighborhoods. Organizer-led recruitment.',                   meta: { Users: 200, Retention: '62%' } },
-  { name: 'Studio launch', when: 'Week 11–14',state: 'next',   desc: 'Self-serve onboarding for new buildings. Founder-led GTM in 3 cities.',     meta: { Target: '1k users' } },
-  { name: 'Moderation API',when: 'Q1',        state: 'next',   desc: 'Trust + safety primitives exposed as a small API for adjacent products.',   meta: { Market: '$300M' } },
-]
-
-const SUGGESTIONS = [
-  { label: 'POSITIONING · v3',   body: <>&ldquo;Snapchat for blocks&rdquo;. Memorability 8.4/10. Lowest category confusion across 5 tested variants.</> },
-  { label: 'WEDGE · ship first', body: <>Block-verified address gating is the moat. Ship it before async voice — competitors can&apos;t fake the proximity layer.</> },
-  { label: 'RISK · move fast',   body: <>Trace shipped a community feature last week. ≈3 weeks of runway before the gap narrows.</> },
-]
 
 export default function IdeaDetailPage() {
   const router = useRouter()
   const params = useParams()
-  const ideaId = decodeURIComponent(params.id as string)
+  const ideaId = params.id as string
   const [tab, setTab] = useState('features')
-  const [feats, setFeats] = useState(FEATURES)
+  const [idea, setIdea] = useState<Idea | null>(null)
+  const [features, setFeatures] = useState<Feature[]>([])
+  const [phases, setPhases] = useState<Phase[]>([])
+  const [suggestions, setSuggestions] = useState<AISuggestion[]>([])
+  const [competitors, setCompetitors] = useState<Array<Record<string, unknown>>>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const toggle = (idx: number) => setFeats(prev => prev.map((f, i) => i === idx ? { ...f, done: !f.done } : f))
-  const completed = feats.filter(f => f.done).length
+  useEffect(() => {
+    if (!ideaId) return
+    let cancelled = false
+    async function load() {
+      try {
+        setLoading(true)
+        setError(null)
+        const result = await IdeaAPI.getIdea(ideaId)
+        const detail = result.idea
+        const [sugs, comp] = await Promise.all([
+          AIAPI.getSuggestions(ideaId).catch(() => []),
+          CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] })),
+        ])
+        if (cancelled) return
+        setIdea(detail.idea)
+        setFeatures(detail.features || [])
+        setPhases(detail.phases || [])
+        setSuggestions(sugs)
+        setCompetitors(comp.research || comp.competitors || [])
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load idea')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [ideaId])
+
+  async function toggleFeature(feature: Feature) {
+    try {
+      const updated = await FeatureAPI.updateFeature(feature.id, { is_completed: !feature.is_completed })
+      setFeatures(prev => prev.map(f => (f.id === feature.id ? updated : f)))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update feature')
+    }
+  }
+
+  if (loading) {
+    return <div className="page"><p style={{ color: 'var(--fg-2)' }}>Loading idea…</p></div>
+  }
+
+  if (error || !idea) {
+    return (
+      <div className="page">
+        <p style={{ color: 'var(--warn)' }}>{error || 'Idea not found'}</p>
+        <button className="btn-sm ghost" onClick={() => router.push(routes.ideas)}>Back to ideas</button>
+      </div>
+    )
+  }
+
+  const completed = features.filter(f => f.is_completed).length
+  const score = ideaScore(idea)
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <div className="ph-eyebrow">Idea · {ideaId}</div>
-          <h1><em>Hyper-local</em> audio for neighborhoods</h1>
-          <div className="ph-sub">Async voice notes in a 3-block radius. Trust from proximity, not identity. Snapchat for blocks.</div>
+          <div className="ph-eyebrow">Idea · {statusLabel(idea.status)}</div>
+          <h1><em>{idea.title}</em></h1>
+          <div className="ph-sub">{idea.description || 'No description yet.'}</div>
         </div>
         <div className="page-head-actions">
-          <button className="btn-sm ghost" onClick={() => router.push('/dashboard/ideas')}>
+          <button className="btn-sm ghost" onClick={() => router.push(routes.ideas)}>
             <DI.CaretRight style={{ transform: 'rotate(180deg)' }}/> Back
           </button>
-          <button className="btn-sm ghost"><DI.Export/> Export</button>
-          <button className="btn-sm solid" onClick={() => router.push('/dashboard/copilot')}>
+          <button className="btn-sm solid" onClick={() => router.push(routes.copilot)}>
             <DI.Spark/> Ask Copilot
           </button>
         </div>
       </div>
 
       <div className="idea-detail">
-        {/* LEFT */}
         <div className="id-left">
           <div className="id-hero">
-            <span className="id-tag">Hot wedge · active</span>
-            <h2><em>Snapchat</em> for blocks.</h2>
-            <p>Async voice + ephemerality. Trust from proximity, not identity. Dense urban beta markets, apartment-block organizers as the first buyer.</p>
+            <span className="id-tag">{statusLabel(idea.status)} · {idea.priority} priority</span>
+            <h2>{idea.title}</h2>
+            <p>{idea.description}</p>
             <div className="id-scorebar">
-              <div className="label"><span>Viability</span><span>87 / 100</span></div>
-              <div className="bar"><div className="fill" style={{ width: '87%' }}/></div>
+              <div className="label"><span>Score</span><span>{score} / 100</span></div>
+              <div className="bar"><div className="fill" style={{ width: `${score}%` }}/></div>
             </div>
             <div className="id-scorebar">
-              <div className="label"><span>Defensibility</span><span>74 / 100</span></div>
-              <div className="bar"><div className="fill" style={{ width: '74%' }}/></div>
-            </div>
-            <div className="id-scorebar warn">
-              <div className="label"><span>Time pressure</span><span>HIGH</span></div>
-              <div className="bar"><div className="fill" style={{ width: '82%' }}/></div>
+              <div className="label"><span>Progress</span><span>{idea.progress_percentage}%</span></div>
+              <div className="bar"><div className="fill" style={{ width: `${idea.progress_percentage}%` }}/></div>
             </div>
           </div>
 
           <div className="card">
             <div className="id-meta">
-              <div className="row"><span className="key">Status</span><span className="val pill accent">Active</span></div>
-              <div className="row"><span className="key">Stage</span><span className="val">Closed beta</span></div>
-              <div className="row"><span className="key">Owner</span><span className="val">Alex Brennan</span></div>
-              <div className="row"><span className="key">Category</span><span className="val">Consumer · Social · Voice</span></div>
-              <div className="row"><span className="key">Created</span><span className="val">14 Apr 2026</span></div>
-              <div className="row"><span className="key">Last refined</span><span className="val">2 minutes ago</span></div>
-              <div className="row"><span className="key">Reminder</span><span className="val pill good">Friday · review</span></div>
+              <div className="row"><span className="key">Status</span><span className="val pill accent">{statusLabel(idea.status)}</span></div>
+              <div className="row"><span className="key">Priority</span><span className="val">{idea.priority}</span></div>
+              <div className="row"><span className="key">Created</span><span className="val">{formatDate(idea.created_at)}</span></div>
+              <div className="row"><span className="key">Updated</span><span className="val">{timeAgo(idea.updated_at)}</span></div>
             </div>
           </div>
 
-          <div className="card">
-            <div className="eyebrow-mono" style={{ marginBottom: 12 }}>Tags</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {['Consumer','Voice','Social','Ephemeral','Hyperlocal','MVP-ready'].map(t => (
-                <span key={t} style={{
-                  fontFamily: 'var(--font-mono)', fontSize: 11,
-                  padding: '3px 9px', borderRadius: 999,
-                  background: 'color-mix(in srgb, var(--fg) 4%, transparent)',
-                  border: '1px solid var(--line-2)',
-                  color: 'var(--fg-2)', letterSpacing: 0.02,
-                }}>{t}</span>
-              ))}
+          {(idea.tags?.length ?? 0) > 0 && (
+            <div className="card">
+              <div className="eyebrow-mono" style={{ marginBottom: 12 }}>Tags</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {idea.tags.map(t => (
+                  <span key={t} style={{ fontFamily: 'var(--font-mono)', fontSize: 11, padding: '3px 9px', borderRadius: 999, background: 'color-mix(in srgb, var(--fg) 4%, transparent)', border: '1px solid var(--line-2)', color: 'var(--fg-2)' }}>{t}</span>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* CENTER */}
         <div className="id-center">
           <div className="id-tabs">
             {[
-              { id: 'features', label: `Features`, count: `${completed}/${feats.length}` },
-              { id: 'phases',   label: 'Phases',   count: '5' },
-              { id: 'ai',       label: 'AI suggestions', count: '3' },
-              { id: 'comp',     label: 'Competitors', count: '14' },
-              { id: 'notes',    label: 'Notes', count: null },
+              { id: 'features', label: 'Features', count: `${completed}/${features.length}` },
+              { id: 'phases', label: 'Phases', count: String(phases.length) },
+              { id: 'ai', label: 'AI suggestions', count: String(suggestions.length) },
+              { id: 'comp', label: 'Competitors', count: String(competitors.length) },
             ].map(t => (
               <button key={t.id} className={`id-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
                 {t.label} {t.count && <span className="count">{t.count}</span>}
@@ -126,155 +154,93 @@ export default function IdeaDetailPage() {
           {tab === 'features' && (
             <div className="id-panel">
               <div className="id-panel-head">
-                <h3>Feature scope <span style={{ color: 'var(--fg-3)', fontFamily: 'var(--font-mono)', fontSize: 11, marginLeft: 8 }}>{completed} of {feats.length} done · {Math.round(completed / feats.length * 100)}%</span></h3>
-                <div className="mini-actions">
-                  <span className="ma">add ↵</span>
-                  <span className="ma"><DI.Filter/></span>
-                  <span className="ma"><DI.Dots/></span>
+                <h3>Feature scope</h3>
+              </div>
+              {features.length === 0 ? (
+                <p style={{ color: 'var(--fg-2)' }}>No features yet.</p>
+              ) : (
+                <div className="feat-list">
+                  {features.map(f => (
+                    <div key={f.id} className={`feat-item ${f.is_completed ? 'done' : ''}`} onClick={() => toggleFeature(f)}>
+                      <span className="ck">{f.is_completed && <DI.Check/>}</span>
+                      <span className={`prio ${f.priority}`}>{priorityShort(f.priority)}</span>
+                      <span className="label">{f.title}</span>
+                    </div>
+                  ))}
                 </div>
-              </div>
-              <div className="feat-list">
-                {feats.map((f, i) => (
-                  <div key={i} className={`feat-item ${f.done ? 'done' : ''}`} onClick={() => toggle(i)}>
-                    <span className="ck">{f.done && <DI.Check/>}</span>
-                    <span className={`prio ${f.p.toLowerCase()}`}>{f.p}</span>
-                    <span className="label">{f.label}</span>
-                    <span className="meta-est">{f.est}</span>
-                    <span className="meta-owner"/>
-                  </div>
-                ))}
-              </div>
+              )}
             </div>
           )}
 
           {tab === 'phases' && (
             <div className="id-panel">
-              <div className="id-panel-head">
-                <h3>Roadmap · phased</h3>
-                <div className="mini-actions">
-                  <span className="ma">add phase ↵</span>
-                  <span className="ma">re-sequence</span>
-                </div>
-              </div>
-              <div className="phases">
-                {PHASES.map((p, i) => (
-                  <div key={p.name} className={`phase ${p.state}`}>
-                    <span className="p-dot">{p.state === 'done' ? <DI.Check/> : String(i + 1).padStart(2, '0')}</span>
-                    <div className="p-body">
-                      <div className="p-row"><span>{p.name}</span><span className="when">{p.when}</span></div>
-                      <div className="p-desc">{p.desc}</div>
-                      <div className="p-meta">
-                        {Object.entries(p.meta).map(([k, v]) => <span key={k}>{k} <b>{v}</b></span>)}
+              <div className="id-panel-head"><h3>Roadmap · phased</h3></div>
+              {phases.length === 0 ? (
+                <p style={{ color: 'var(--fg-2)' }}>No phases yet.</p>
+              ) : (
+                <div className="phases">
+                  {phases.map((p, i) => (
+                    <div key={p.id} className={`phase ${p.is_completed ? 'done' : i === 0 ? 'active' : 'next'}`}>
+                      <span className="p-dot">{p.is_completed ? <DI.Check/> : String(i + 1).padStart(2, '0')}</span>
+                      <div className="p-body">
+                        <div className="p-row"><span>{p.name}</span></div>
+                        <div className="p-desc">{p.description}</div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           {tab === 'ai' && (
             <div className="id-panel">
-              <div className="id-panel-head">
-                <h3>Copilot suggestions</h3>
-                <span style={{ color: 'var(--fg-3)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>refreshed 12s ago</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {SUGGESTIONS.map((s, i) => (
-                  <div key={i} className="sug-card">
-                    <span className="s-label"><DI.Sparkles/> {s.label}</span>
-                    <div className="s-body">{s.body}</div>
-                    <div className="s-actions">
-                      <button className="s-act accept"><DI.Check/> Accept</button>
-                      <button className="s-act">Dismiss</button>
-                      <button className="s-act"><DI.Spark/> Ask Copilot to explain</button>
+              <div className="id-panel-head"><h3>Copilot suggestions</h3></div>
+              {suggestions.length === 0 ? (
+                <p style={{ color: 'var(--fg-2)' }}>No AI suggestions yet. Ask Copilot to generate some.</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {suggestions.map(s => (
+                    <div key={s.id} className="sug-card">
+                      <span className="s-label"><DI.Sparkles/> {s.suggestion_type}</span>
+                      <div className="s-body">{s.suggestion_text || s.content}</div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           {tab === 'comp' && (
             <div className="id-panel">
-              <div className="id-panel-head">
-                <h3>Competitors · 14 mapped</h3>
-                <span style={{ color: 'var(--good)', fontFamily: 'var(--font-mono)', fontSize: 11 }}>● live scrape</span>
-              </div>
-              {[
-                { n: 'Notable',   m: 'Note-first · $12M Series A',  s: 72 },
-                { n: 'FieldKit',  m: 'Mobile founders · $4M Seed',  s: 58 },
-                { n: 'Brieflab',  m: 'Validation · bootstrapped',   s: 81 },
-                { n: 'Trace',     m: 'Research-first · $22M',       s: 64 },
-                { n: 'Foundry09', m: 'PM tooling · $8M Series A',   s: 49 },
-              ].map(c => (
-                <div key={c.n} className="pricing-row">
-                  <span className="ci-logo">{c.n[0]}</span>
-                  <span><div className="nm">{c.n}</div><div className="meta">{c.m}</div></span>
-                  <div style={{ width: 80 }}>
-                    <div className="ci-bar"><div className="fill" style={{ width: `${c.s}%` }}/></div>
-                  </div>
-                  <span className="pr">{c.s}</span>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {tab === 'notes' && (
-            <div className="id-panel">
-              <div className="id-panel-head"><h3>Workspace notes</h3></div>
-              <div className="empty" style={{ padding: '40px 20px', border: 0 }}>
-                <div className="em-icon"><DI.Doc/></div>
-                <h3>Drop a thought</h3>
-                <p>Voice memos, scratch notes, links — the Copilot files them into the right idea.</p>
-              </div>
+              <div className="id-panel-head"><h3>Competitors · {competitors.length} mapped</h3></div>
+              {competitors.length === 0 ? (
+                <p style={{ color: 'var(--fg-2)' }}>No competitor research yet. Run a scan from Competitor Intelligence.</p>
+              ) : (
+                competitors.map((c, idx) => {
+                  const name = String(c.competitor_name || c.name || `Competitor ${idx + 1}`)
+                  const meta = String(c.market_position || c.description || '')
+                  const conf = Math.round(Number(c.confidence_score) || 50)
+                  return (
+                    <div key={String(c.id || idx)} className="pricing-row">
+                      <span className="ci-logo">{name[0]}</span>
+                      <span><div className="nm">{name}</div><div className="meta">{meta}</div></span>
+                      <div style={{ width: 80 }}><div className="ci-bar"><div className="fill" style={{ width: `${conf}%` }}/></div></div>
+                      <span className="pr">{conf}</span>
+                    </div>
+                  )
+                })
+              )}
             </div>
           )}
         </div>
 
-        {/* RIGHT */}
         <div className="id-right">
           <div className="id-right-card">
-            <div className="r-head"><DI.Target/> Market gap · live</div>
-            <div className="mini-insight">
-              <div className="mi-title">Async voice + neighborhood moderation — no competitor owns this.</div>
-              <div className="mi-meta">signal HIGH · 92% conf</div>
-            </div>
-            <div className="mini-insight">
-              <div className="mi-title">Apartment-block organizers index 4× higher on early-adopter signals.</div>
-              <div className="mi-meta">lift 4.0× · effort low</div>
-            </div>
-          </div>
-          <div className="id-right-card">
-            <div className="r-head"><DI.Radar/> Competitor moves</div>
-            <div className="mini-insight">
-              <div className="mi-title">Trace shipped a community feature in their last release.</div>
-              <div className="mi-meta">3w runway · ship moderation first</div>
-            </div>
-            <div className="mini-insight">
-              <div className="mi-title">Notable expanded into voice — but still identity-first.</div>
-              <div className="mi-meta">3d ago · low overlap</div>
-            </div>
-          </div>
-          <div className="id-right-card">
-            <div className="r-head"><DI.Bolt/> Quick wins</div>
-            <div className="mini-insight">
-              <div className="mi-title">Run an organizer-led referral loop in beta — 4× expected lift.</div>
-              <div className="mi-meta">effort low · est +280 users</div>
-            </div>
-            <div className="mini-insight">
-              <div className="mi-title">Ship a Tuesday digest of best block voices.</div>
-              <div className="mi-meta">retention +12pp expected</div>
-            </div>
-          </div>
-          <div className="id-right-card" style={{ background: 'linear-gradient(160deg, var(--accent-soft), transparent 80%) var(--surface)', borderColor: 'var(--accent-line)' }}>
-            <div className="r-head"><DI.Spark/> Summary · this week</div>
-            <p style={{ fontSize: 13, color: 'var(--fg)', lineHeight: 1.55, letterSpacing: '-0.005em' }}>
-              The wedge is tightening — competitors are circling. Ship the moderation primitive next, lock the organizer-first beta, and re-test positioning at week 8.
+            <div className="r-head"><DI.Spark/> Live from API</div>
+            <p style={{ fontSize: 13, color: 'var(--fg)', lineHeight: 1.55 }}>
+              This page loads idea, features, phases, AI suggestions, and competitors from {process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}.
             </p>
-            <button className="btn-sm solid" style={{ height: 30, padding: '0 12px' }} onClick={() => router.push('/dashboard/copilot')}>
-              Open in Copilot <DI.Arrow/>
-            </button>
           </div>
         </div>
       </div>

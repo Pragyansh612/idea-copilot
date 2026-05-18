@@ -1,10 +1,12 @@
+import Link from 'next/link'
 import { IconCheck } from './Icons'
+import { routes } from '@/lib/routes'
 
 export default function PricingSection() {
   const tiers = [
-    { name: 'Spark', price: '$0', cadence: 'free forever', desc: 'For the first sketch of an idea.', cta: 'Get started', features: ['3 active ideas','AI refinement · 20/mo','Light competitor scans','Personal workspace'] },
-    { name: 'Founder', price: '$24', cadence: 'per month', desc: 'For founders building seriously.', featured: true, tag: 'Most popular', cta: 'Start free trial', features: ['Unlimited ideas','Unlimited AI refinement','Live competitor radar + alerts','Roadmap planner + exports','Priority Copilot model'] },
-    { name: 'Studio', price: '$72', cadence: 'per month', desc: 'For studios running many bets in parallel.', cta: 'Talk to us', features: ['Multi-workspace · 10 seats','API access · webhooks','Custom market reports','SOC2 · SSO','Founder office hours'] },
+    { name: 'Spark', price: '$0', cadence: 'free forever', desc: 'For the first sketch of an idea.', cta: 'Get started', href: routes.signup, features: ['3 active ideas','AI refinement · 20/mo','Light competitor scans','Personal workspace'] },
+    { name: 'Founder', price: '$24', cadence: 'per month', desc: 'For founders building seriously.', featured: true, tag: 'Most popular', cta: 'Start free trial', href: routes.signup, features: ['Unlimited ideas','Unlimited AI refinement','Live competitor radar + alerts','Roadmap planner + exports','Priority Copilot model'] },
+    { name: 'Studio', price: '$72', cadence: 'per month', desc: 'For studios running many bets in parallel.', cta: 'Talk to us', href: 'mailto:hello@ideacopilot.app?subject=Studio%20plan', features: ['Multi-workspace · 10 seats','API access · webhooks','Custom market reports','SOC2 · SSO','Founder office hours'] },
   ]
   return (
     <section className="section" id="pricing">
@@ -26,7 +28,7 @@ export default function PricingSection() {
                   <li key={f}><IconCheck /> <span>{f}</span></li>
                 ))}
               </ul>
-              <a className="pc-cta" href="#cta">{t.cta} →</a>
+              <Link className="pc-cta" href={t.href}>{t.cta} →</Link>
             </div>
           ))}
         </div>

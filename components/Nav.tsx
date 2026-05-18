@@ -1,20 +1,22 @@
 'use client'
+import Link from 'next/link'
 import { useTheme } from '@/hooks/useTheme'
 import { IconSun, IconMoon } from './Icons'
+import { routes } from '@/lib/routes'
 
 export default function Nav() {
   const [theme, toggleTheme] = useTheme()
   return (
     <nav className="nav">
-      <a className="nav-logo" href="#top">
+      <Link className="nav-logo" href={routes.home}>
         <span className="mark" />
         <span>IdeaCopilot</span>
-      </a>
+      </Link>
       <div className="nav-links">
-        <a href="#workflow">Workflow</a>
-        <a href="#intel">Intelligence</a>
-        <a href="#copilot">Copilot</a>
-        <a href="#pricing">Pricing</a>
+        <a href={routes.workflow}>Workflow</a>
+        <a href={routes.intel}>Intelligence</a>
+        <a href={routes.copilotSection}>Copilot</a>
+        <a href={routes.pricing}>Pricing</a>
       </div>
       <span className="nav-sep" />
       <button
@@ -25,7 +27,10 @@ export default function Nav() {
       >
         {theme === 'light' ? <IconMoon /> : <IconSun />}
       </button>
-      <a className="nav-cta" href="#cta">Start free</a>
+      <Link className="nav-link-quiet" href={routes.login} style={{ fontSize: 13.5, color: 'var(--fg-2)', marginRight: 4 }}>
+        Log in
+      </Link>
+      <Link className="nav-cta" href={routes.signup}>Start free</Link>
     </nav>
   )
 }

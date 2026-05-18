@@ -1,4 +1,6 @@
+import Link from 'next/link'
 import { IconArrow } from './Icons'
+import { routes } from '@/lib/routes'
 import MockDashboard from './mockups/MockDashboard'
 import MockCompetitors from './mockups/MockCompetitors'
 import MockInsight from './mockups/MockInsight'
@@ -13,12 +15,12 @@ export default function Hero() {
       </div>
       <div className="wrap hero-inner">
         <div className="hero-top">
-          <div className="hero-tag">
+          <Link href={routes.login} className="hero-tag" style={{ textDecoration: 'none', color: 'inherit' }}>
             <b>v1.0</b>
             <span>Public beta · shipping this quarter</span>
             <span className="dot" />
-            <span>Read the changelog →</span>
-          </div>
+            <span>Join the beta →</span>
+          </Link>
           <h1 className="hero-h">
             Turn ideas into<br />real <em>products</em>.
           </h1>
@@ -28,12 +30,12 @@ export default function Hero() {
             in fragments.
           </p>
           <div className="cta-row">
-            <a className="btn btn-primary" href="#cta">
+            <Link className="btn btn-primary" href={routes.signup}>
               Start building <IconArrow />
-            </a>
-            <button className="btn btn-ghost">
-              <span className="btn-play" /> Watch the 2-minute tour
-            </button>
+            </Link>
+            <Link className="btn btn-ghost" href={routes.workflow}>
+              <span className="btn-play" /> See the workflow
+            </Link>
           </div>
           <div className="hero-meta">
             <div className="avatars"><span /><span /><span /><span /></div>

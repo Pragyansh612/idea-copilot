@@ -1,5 +1,11 @@
 'use client'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { IdeaAPI, type Idea } from '@/lib/api/idea'
+import { NotificationAPI, type Notification } from '@/lib/api/notification'
+import { UserAPI, type UserProfile, type UserStats } from '@/lib/api/user'
+import { displayName, ideaScore, statusBadge, timeAgo } from '@/lib/dashboard/format'
+import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
 function Spark({ data, className }: { data: number[]; className?: string }) {
@@ -26,33 +32,56 @@ function Spark({ data, className }: { data: number[]; className?: string }) {
   )
 }
 
-const RECENT_IDEAS = [
-  { id: 'Hyper-local audio',  badge: { text: 'HOT WEDGE', kind: 'hot' },  score: 87, title: <>Hyper-local <em>audio</em> for neighborhoods</>,       desc: 'Async voice notes within a 3-block radius. Trust from proximity, not identity.', progress: 64, tags: ['Consumer','Voice','Social'], when: '2m ago' },
-  { id: 'AI grant assistant', badge: { text: 'VALIDATING', kind: '' },     score: 72, title: <>AI <em>grant</em> assistant for indie research</>,       desc: 'Match indie researchers to relevant grants. Auto-draft the packet.',             progress: 38, tags: ['B2B','AI','Research'],        when: '4h ago' },
-  { id: 'Drone logistics',    badge: { text: 'STALLED', kind: 'warn' },    score: 41, title: 'Drone logistics for short-haul rural medical',            desc: 'On-demand insulin delivery in rural corridors. Hub-and-spoke from county clinics.', progress: 12, tags: ['Hardware','Health'],        when: 'yesterday' },
-  { id: 'Studio OS',          badge: { text: 'DRAFT', kind: '' },          score: 58, title: <>An <em>operating system</em> for solo studios</>,         desc: 'One workspace for the bets, the time, the books, the contracts.',               progress: 22, tags: ['SaaS','Studio'],              when: '3d ago' },
-  { id: 'Field-note CRM',     badge: { text: 'EXPLORING', kind: '' },      score: 64, title: 'Field-note CRM for in-person sellers',                    desc: 'Reps record after a meeting; the CRM is filled in by AI.',                       progress: 30, tags: ['B2B','Sales','AI'],           when: '5d ago' },
-  { id: 'Quiet API',          badge: { text: 'WEDGE LOCKED', kind: 'hot' }, score: 81, title: <>The <em>quiet</em> API — webhooks, sans Slack noise</>, desc: 'A digest layer for webhook chaos. Right alerts, right humans, right cadence.',   progress: 52, tags: ['DevTool','Infra'],            when: '1w ago' },
-]
-
 export default function DashboardHome() {
   const router = useRouter()
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [stats, setStats] = useState<UserStats | null>(null)
+  const [recentIdeas, setRecentIdeas] = useState<Idea[]>([])
+  const [notifications, setNotifications] = useState<Notification[]>([])
+
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        setLoading(true)
+        setError(null)
+        const [prof, userStats, ideasData, notifs] = await Promise.all([
+          UserAPI.getProfile(),
+          UserAPI.getStats(),
+          IdeaAPI.getIdeas({ limit: 6, sort_by: 'updated_at', sort_order: 'desc' }),
+          NotificationAPI.getNotifications(false),
+        ])
+        if (cancelled) return
+        setProfile(prof)
+        setStats(userStats)
+        setRecentIdeas(ideasData.ideas)
+        setNotifications(notifs.notifications.slice(0, 4))
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load dashboard')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [])
+
   const now = new Date()
   const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][now.getDay()]
   const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][now.getMonth()]
+  const name = displayName(profile?.email, profile?.display_name)
 
-  const stats = [
-    { label: 'Total ideas',          icon: <DI.Bulb/>,     value: '24',  delta: '+3 this week', spark: [12,14,13,17,16,19,21,24] },
-    { label: 'Active projects',      icon: <DI.Folder/>,   value: '7',   delta: '+1 active',    spark: [3,4,4,5,6,6,7,7] },
-    { label: 'AI suggestions',       icon: <DI.Sparkles/>, value: '182', delta: '+24 today',    spark: [120,128,138,140,148,158,170,182] },
-    { label: 'Market opportunities', icon: <DI.Target/>,   value: '12',  delta: '+2 new',       spark: [6,7,8,8,9,10,11,12] },
-    { label: 'Competitors analyzed', icon: <DI.Radar/>,    value: '94',  delta: '+8 this week', spark: [60,68,72,78,84,88,90,94] },
-    { label: 'Productivity score',   icon: <DI.Trend/>,    value: '86',  delta: '+4 pts',       spark: [70,72,74,78,80,82,84,86] },
-  ]
+  const statCards = stats ? [
+    { label: 'Total ideas', icon: <DI.Bulb/>, value: String(stats.ideas_created ?? 0), delta: `${stats.ideas_completed ?? 0} completed`, spark: [2, 4, 6, 8, 10, 12, stats.ideas_created ?? 0] },
+    { label: 'Current level', icon: <DI.Trend/>, value: String(stats.current_level ?? 1), delta: `${stats.total_xp ?? 0} XP`, spark: [1, 1, 2, 2, 3, stats.current_level ?? 1, stats.current_level ?? 1] },
+    { label: 'Current streak', icon: <DI.Target/>, value: `${stats.current_streak ?? 0}d`, delta: `best ${stats.longest_streak ?? 0}d`, spark: [0, 1, 2, 3, stats.current_streak ?? 0, stats.current_streak ?? 0, stats.current_streak ?? 0] },
+    { label: 'AI applied', icon: <DI.Sparkles/>, value: String(stats.ai_suggestions_applied ?? 0), delta: 'suggestions used', spark: [0, 1, 2, 4, 6, 8, stats.ai_suggestions_applied ?? 0] },
+  ] : []
 
   return (
     <div className="page">
-      {/* Hello banner */}
       <div className="hello">
         <div className="hello-grid"/>
         <div className="hello-inner">
@@ -60,114 +89,111 @@ export default function DashboardHome() {
             <div className="hello-now">
               <span className="pulse"/>
               {dow}, {mon} {now.getDate()} · {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              <span style={{ color: 'var(--fg-4)' }}>·</span>
-              Last sync · 12s ago
             </div>
-            <h1>Welcome back, <em>Alex</em>.</h1>
+            <h1>Welcome back, <em>{name}</em>.</h1>
             <div className="h-sub">
-              <b>3 ideas</b> evolved this week. <b>2 market gaps</b> detected overnight.
-              Your Copilot has <b>4 recommendations</b> waiting in <i>Hyper-local audio</i>.
+              {loading ? 'Syncing your workspace…' : (
+                <>
+                  <b>{stats?.ideas_created ?? 0} ideas</b> in your lab.
+                  {notifications.length > 0 && (
+                    <> <b>{notifications.length}</b> recent notifications from Copilot.</>
+                  )}
+                </>
+              )}
             </div>
           </div>
           <div className="hello-actions">
-            <button className="btn-sm solid" onClick={() => router.push('/dashboard/ideas')}><DI.Plus/> New idea</button>
-            <button className="btn-sm ghost" onClick={() => router.push('/dashboard/copilot')}><DI.Spark/> Ask Copilot</button>
-            <button className="btn-sm ghost" onClick={() => router.push('/dashboard/competitors')}><DI.Radar/> Discover competitors</button>
+            <button className="btn-sm solid" onClick={() => router.push(routes.newIdea)}><DI.Plus/> New idea</button>
+            <button className="btn-sm ghost" onClick={() => router.push(routes.copilot)}><DI.Spark/> Ask Copilot</button>
+            <button className="btn-sm ghost" onClick={() => router.push(routes.competitors)}><DI.Radar/> Competitors</button>
           </div>
         </div>
       </div>
 
-      {/* Stats */}
+      {error && <div className="card" style={{ marginBottom: 16, color: 'var(--warn)' }}>{error}</div>}
+
       <div className="section-block">
         <div className="section-block-head">
           <h2>This <em>week</em>, at a glance</h2>
-          <span className="sb-sub">last 7 days · auto-updates</span>
+          <span className="sb-sub">from your account stats</span>
         </div>
-        <div className="stats">
-          {stats.map(s => (
-            <div key={s.label} className="stat">
-              <div className="s-label">{s.icon} {s.label}</div>
-              <div className="s-value">{s.value}</div>
-              <div className="s-delta"><DI.Up/> {s.delta}</div>
-              <Spark className="s-spark" data={s.spark} />
-            </div>
-          ))}
-        </div>
+        {loading ? (
+          <p style={{ color: 'var(--fg-2)' }}>Loading stats…</p>
+        ) : (
+          <div className="stats">
+            {statCards.map(s => (
+              <div key={s.label} className="stat">
+                <div className="s-label">{s.icon} {s.label}</div>
+                <div className="s-value">{s.value}</div>
+                <div className="s-delta"><DI.Up/> {s.delta}</div>
+                <Spark className="s-spark" data={s.spark} />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Recent ideas */}
       <div className="section-block">
         <div className="section-block-head">
           <h2>Recent <em>ideas</em></h2>
-          <a className="sb-link" onClick={() => router.push('/dashboard/ideas')} style={{ cursor: 'pointer' }}>View all 24 →</a>
+          <a className="sb-link" onClick={() => router.push(routes.ideas)} style={{ cursor: 'pointer' }}>
+            View all {stats?.ideas_created ?? recentIdeas.length} →
+          </a>
         </div>
-        <div className="ideas-grid">
-          {RECENT_IDEAS.map(i => (
-            <div key={i.id} className="idea" onClick={() => router.push(`/dashboard/ideas/${encodeURIComponent(i.id)}`)}>
-              <div className="i-row1">
-                <span className={`i-tag ${i.badge.kind}`}>{i.badge.text}</span>
-                <span className="i-score">score · <b>{i.score}</b></span>
-              </div>
-              <h3>{i.title}</h3>
-              <p className="i-desc">{i.desc}</p>
-              <div className="i-prog"><div className="bar" style={{ width: `${i.progress}%` }}/></div>
-              <div className="i-foot">
-                <div className="tags">{i.tags.map(t => <span key={t}>{t}</span>)}</div>
-                <span className="sep"/>
-                <span>{i.when}</span>
-              </div>
-            </div>
-          ))}
-        </div>
+        {loading ? (
+          <p style={{ color: 'var(--fg-2)' }}>Loading ideas…</p>
+        ) : recentIdeas.length === 0 ? (
+          <div className="empty">
+            <h3>No ideas yet</h3>
+            <p>Start a conversation with Copilot or add your first idea.</p>
+          </div>
+        ) : (
+          <div className="ideas-grid">
+            {recentIdeas.map(i => {
+              const badge = statusBadge(i.status)
+              const score = ideaScore(i)
+              return (
+                <div key={i.id} className="idea" onClick={() => router.push(routes.idea(i.id))}>
+                  <div className="i-row1">
+                    <span className={`i-tag ${badge.kind}`}>{badge.text}</span>
+                    <span className="i-score">score · <b>{score}</b></span>
+                  </div>
+                  <h3>{i.title}</h3>
+                  <p className="i-desc">{i.description || 'No description yet.'}</p>
+                  <div className="i-prog"><div className="bar" style={{ width: `${i.progress_percentage}%` }}/></div>
+                  <div className="i-foot">
+                    <div className="tags">{(i.tags || []).slice(0, 3).map(t => <span key={t}>{t}</span>)}</div>
+                    <span className="sep"/>
+                    <span>{timeAgo(i.updated_at)}</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
-      {/* AI Insights */}
       <div className="section-block">
         <div className="section-block-head">
-          <h2>AI <em>insights</em> · overnight</h2>
-          <span className="sb-sub">3 new · across 4 ideas</span>
+          <h2>Recent <em>notifications</em></h2>
+          <span className="sb-sub">from Copilot & workspace</span>
         </div>
-        <div className="insights">
-          <div className="insight accent">
-            <span className="i-kind"><DI.Target/> Market gap detected</span>
-            <h4>No competitor combines <em>async voice</em> with neighborhood-level moderation.</h4>
-            <p>Mapped 14 players across the hyperlocal social category. Established companies index on broadcast and identity; the wedge sits in trust + ephemerality.</p>
-            <div className="i-meta">
-              <span>signal <strong style={{ color: 'var(--good)' }}>HIGH</strong></span>
-              <span>confidence <strong>92%</strong></span>
-              <span>TAM <strong>$2.4B</strong></span>
-              <span style={{ marginLeft: 'auto', color: 'var(--fg-3)' }}>Hyper-local audio</span>
-            </div>
+        {notifications.length === 0 ? (
+          <p style={{ color: 'var(--fg-2)' }}>No notifications yet.</p>
+        ) : (
+          <div className="insights">
+            {notifications.map(n => (
+              <div key={n.id} className={`insight ${n.is_read ? '' : 'accent'}`}>
+                <span className="i-kind"><DI.Bell/> {n.type}</span>
+                <h4>{n.title}</h4>
+                <p>{n.message}</p>
+                <div className="i-meta">
+                  <span>{timeAgo(n.created_at)}</span>
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="insight">
-            <span className="i-kind"><DI.Radar/> Competitor moved</span>
-            <h4>Trace shipped a community feature in their last release.</h4>
-            <p>Their roadmap suggests proximity-aware moderation by Q4. ≈3 weeks of runway before your wedge narrows.</p>
-            <div className="i-meta">
-              <span>priority <strong style={{ color: 'var(--warn)' }}>HIGH</strong></span>
-              <span>recommend <strong>ship moderation</strong></span>
-            </div>
-          </div>
-          <div className="insight">
-            <span className="i-kind"><DI.Sparkles/> Positioning · best variant</span>
-            <h4><em>&ldquo;Snapchat for blocks&rdquo;</em> is the strongest framing across 5 tested variants.</h4>
-            <p>Indexes highest on memorability (8.4 / 10) and lowest on category confusion. Recommended as the lead hook.</p>
-            <div className="i-meta">
-              <span>variants <strong>5</strong></span>
-              <span>winner <strong>v3</strong></span>
-              <span style={{ marginLeft: 'auto', color: 'var(--fg-3)' }}>Hyper-local audio</span>
-            </div>
-          </div>
-          <div className="insight">
-            <span className="i-kind"><DI.Bolt/> Quick win</span>
-            <h4>Apartment-block organizers index 4× higher on early-adopter signals.</h4>
-            <p>Beta should target organizers, not residents. Land-and-expand from one organizer per building.</p>
-            <div className="i-meta">
-              <span>lift <strong>4.0×</strong></span>
-              <span>effort <strong>low</strong></span>
-            </div>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   )

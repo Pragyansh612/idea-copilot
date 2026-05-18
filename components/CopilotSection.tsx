@@ -1,6 +1,8 @@
 'use client'
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { IconArrow } from './Icons'
+import { routes } from '@/lib/routes'
 
 const FLOWS: Record<string, { user: string; aiBubble: string; card: { title: string; rows: [string, string][] } }> = {
   'Suggest MVP features': {
@@ -53,6 +55,9 @@ export default function CopilotSection() {
                 >{p}</button>
               ))}
             </div>
+            <Link href={routes.signup} className="btn btn-primary" style={{ marginTop: 20, display: 'inline-flex' }}>
+              Try Copilot in your workspace <IconArrow />
+            </Link>
           </div>
 
           <div className="chat-window">
@@ -92,7 +97,7 @@ export default function CopilotSection() {
               <span className="prompt-glyph">→</span>
               <input placeholder="Ask the copilot anything…" defaultValue="" />
               <span className="kbd">⌘ ↵</span>
-              <button className="chat-send"><IconArrow style={{ color: 'white' }}/></button>
+              <Link href={routes.signup} className="chat-send" aria-label="Sign up to use Copilot"><IconArrow style={{ color: 'white' }}/></Link>
             </div>
           </div>
         </div>

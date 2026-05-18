@@ -1,5 +1,6 @@
 'use client'
 import { useRouter } from 'next/navigation'
+import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
 export default function RoadmapsPage() {
@@ -17,7 +18,7 @@ export default function RoadmapsPage() {
         <div className="em-icon"><DI.Route/></div>
         <h3>Pick an idea to see its roadmap</h3>
         <p>Roadmaps live alongside each idea. Open an idea and switch to the Phases tab.</p>
-        <button className="btn-sm solid" onClick={() => router.push('/dashboard/ideas')}><DI.Bulb/> Go to My Ideas</button>
+        <button className="btn-sm solid" onClick={() => router.push(routes.ideas)}><DI.Bulb/> Go to My Ideas</button>
       </div>
     </div>
   )

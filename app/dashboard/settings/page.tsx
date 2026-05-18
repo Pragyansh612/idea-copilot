@@ -1,5 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { UserAPI, type UserProfile } from '@/lib/api/user'
+import { displayName } from '@/lib/dashboard/format'
 import * as DI from '@/components/dashboard/Icons'
 import type { ReactNode } from 'react'
 
@@ -47,9 +49,22 @@ const sections = [
 
 export default function SettingsPage() {
   const [section, setSection] = useState('account')
+  const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [reasoning, setReasoning] = useState(true)
   const [auto, setAuto] = useState(true)
   const [refresh, setRefresh] = useState(false)
+
+  useEffect(() => {
+    UserAPI.getProfile()
+      .then(setProfile)
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load profile'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const name = displayName(profile?.email, profile?.display_name)
+  const workspace = `${name}'s Lab`
 
   return (
     <div className="page page-narrow">
@@ -57,9 +72,11 @@ export default function SettingsPage() {
         <div>
           <div className="ph-eyebrow">Settings</div>
           <h1>Configure your <em>workspace</em>.</h1>
-          <div className="ph-sub">Account, AI behavior, exports and billing — all in one place.</div>
+          <div className="ph-sub">Account and preferences · profile loaded from the API.</div>
         </div>
       </div>
+
+      {error && <div className="card" style={{ marginBottom: 16, color: 'var(--warn)' }}>{error}</div>}
 
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 20, alignItems: 'flex-start' }}>
         <div className="card" style={{ padding: 10 }}>
@@ -71,75 +88,40 @@ export default function SettingsPage() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {section === 'account' && (
-            <SetCard title="Profile" desc="How you appear across the workspace.">
+          {loading ? (
+            <p style={{ color: 'var(--fg-2)' }}>Loading profile…</p>
+          ) : section === 'account' ? (
+            <SetCard title="Profile" desc="Loaded from GET /api/profile.">
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingBottom: 16, borderBottom: '1px solid var(--line)' }}>
                 <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg,#e4a89c,#a36b58)' }}/>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 15, color: 'var(--fg)', letterSpacing: '-0.01em' }}>Alex Brennan</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-3)', marginTop: 2 }}>alex@brennan.studio · founder</div>
+                  <div style={{ fontSize: 15, color: 'var(--fg)' }}>{name}</div>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-3)', marginTop: 2 }}>{profile?.email ?? '—'}</div>
                 </div>
-                <button className="btn-sm ghost">Change avatar</button>
               </div>
-              <Field label="Full name"><input style={inp} defaultValue="Alex Brennan"/></Field>
-              <Field label="Email" hint="Used for login and beta notifications."><input style={inp} defaultValue="alex@brennan.studio"/></Field>
-              <Field label="Role"><input style={inp} defaultValue="Founder · solo"/></Field>
-              <Field label="Time zone"><input style={inp} defaultValue="(UTC-08:00) Pacific Time"/></Field>
+              <Field label="Display name"><input style={inp} readOnly value={profile?.display_name ?? name}/></Field>
+              <Field label="Email"><input style={inp} readOnly value={profile?.email ?? ''}/></Field>
+              <Field label="Bio"><input style={inp} readOnly value={profile?.bio ?? ''} placeholder="Not set"/></Field>
+              <Field label="Location"><input style={inp} readOnly value={profile?.location ?? ''} placeholder="Not set"/></Field>
             </SetCard>
-          )}
-          {section === 'workspace' && (
-            <>
-              <SetCard title="Workspace" desc="Branding and defaults for Alex's Lab.">
-                <Field label="Workspace name"><input style={inp} defaultValue="Alex's Lab"/></Field>
-                <Field label="Slug" hint="Used in shareable export links."><input style={inp} defaultValue="alex-lab"/></Field>
-                <Field label="Default category"><input style={inp} defaultValue="Consumer"/></Field>
-              </SetCard>
-              <SetCard title="Members" desc="Solo workspace · upgrade to add seats.">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg,#e4a89c,#a36b58)' }}/>
-                    <div>
-                      <div style={{ fontSize: 13.5, color: 'var(--fg)' }}>Alex Brennan</div>
-                      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-3)' }}>Owner</div>
-                    </div>
-                  </div>
-                  <button className="btn-sm ghost"><DI.Plus/> Invite (Pro)</button>
-                </div>
-              </SetCard>
-            </>
-          )}
-          {section === 'ai' && (
-            <SetCard title="AI behavior" desc="Tune how the Copilot reasons and surfaces insights.">
-              <Field label="Default model" hint="Used for free-form reasoning."><input style={inp} defaultValue="gpt-4o · founder tier"/></Field>
-              <Field label="Show reasoning steps" hint="Show how the Copilot reached its recommendation."><Toggle on={reasoning} onChange={setReasoning}/></Field>
-              <Field label="Auto-refine new ideas" hint="Run a first-pass refinement when you capture an idea."><Toggle on={auto} onChange={setAuto}/></Field>
-              <Field label="Hourly competitor refresh" hint="Free tier refreshes daily. Founder tier hourly."><Toggle on={refresh} onChange={setRefresh}/></Field>
-              <Field label="Tone of voice"><input style={inp} defaultValue="Direct, founder-shaped"/></Field>
+          ) : section === 'workspace' ? (
+            <SetCard title="Workspace" desc="Branding defaults for your lab.">
+              <Field label="Workspace name"><input style={inp} readOnly value={workspace}/></Field>
+              <Field label="Member"><input style={inp} readOnly value={name}/></Field>
             </SetCard>
-          )}
-          {section === 'notifs' && (
-            <SetCard title="Notifications" desc="Choose what shows up in the watchtower.">
-              {[
-                { l: 'Market gap detected',    d: 'When a new white-space gap is found.' },
-                { l: 'Competitor moved',        d: 'When a competitor ships or funds.' },
-                { l: 'Positioning suggestion',  d: 'When a sharper positioning is found.' },
-                { l: 'Weekly digest',           d: 'Friday digest of the week\'s intelligence.' },
-                { l: 'Roadmap reminders',       d: 'Reminders to review stalled phases.' },
-              ].map(it => <Field key={it.l} label={it.l} hint={it.d}><Toggle on={true}/></Field>)}
+          ) : section === 'ai' ? (
+            <SetCard title="AI behavior" desc="UI preferences (not persisted to API yet).">
+              <Field label="Show reasoning steps"><Toggle on={reasoning} onChange={setReasoning}/></Field>
+              <Field label="Auto-refine new ideas"><Toggle on={auto} onChange={setAuto}/></Field>
+              <Field label="Hourly competitor refresh"><Toggle on={refresh} onChange={setRefresh}/></Field>
             </SetCard>
-          )}
-          {section === 'billing' && (
-            <SetCard title="Plan" desc="You're on the Spark (free) plan.">
-              <div style={{ padding: 18, borderRadius: 12, background: 'linear-gradient(160deg, var(--accent-soft), transparent 70%) var(--surface)', border: '1px solid var(--accent-line)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 24, marginBottom: 12 }}>
-                <div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--accent)' }}>Recommended · Founder</div>
-                  <div style={{ fontSize: 22, color: 'var(--fg)', letterSpacing: '-0.025em', marginTop: 6 }}>$24 <span style={{ fontSize: 13, color: 'var(--fg-3)', fontFamily: 'var(--font-mono)' }}>/ mo</span></div>
-                  <p style={{ fontSize: 13, color: 'var(--fg-2)', marginTop: 6, maxWidth: 360, lineHeight: 1.5 }}>Unlimited ideas, hourly competitor refresh, priority Copilot model, roadmap export.</p>
-                </div>
-                <button className="btn-sm solid">Upgrade now <DI.Arrow/></button>
-              </div>
-              <Field label="Payment method"><span style={{ color: 'var(--fg-3)', fontSize: 13 }}>No card on file</span></Field>
-              <Field label="Invoices"><span style={{ color: 'var(--fg-3)', fontSize: 13 }}>None yet</span></Field>
+          ) : section === 'notifs' ? (
+            <SetCard title="Notifications" desc="Manage alerts in Notifications page.">
+              <p style={{ fontSize: 13, color: 'var(--fg-2)' }}>Notification delivery uses the backend notification service.</p>
+            </SetCard>
+          ) : (
+            <SetCard title="Plan" desc="Billing is not connected in this UI yet.">
+              <p style={{ fontSize: 13, color: 'var(--fg-2)' }}>Upgrade flows are placeholder only.</p>
             </SetCard>
           )}
         </div>

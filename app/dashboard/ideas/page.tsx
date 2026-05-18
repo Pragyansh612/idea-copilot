@@ -1,47 +1,73 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { CategoryAPI, IdeaAPI, type Category, type Idea } from '@/lib/api/idea'
+import { ideaScore, matchesStatusFilter, statusBadge, statusLabel, timeAgo } from '@/lib/dashboard/format'
+import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
-const ALL_IDEAS = [
-  { id: 'Hyper-local audio',   cat: 'Consumer',  status: 'Active',     pri: 'P0', score: 87, badge: { text: 'HOT WEDGE', kind: 'hot' },       title: <>Hyper-local <em>audio</em> for neighborhoods</>,        desc: 'Async voice notes in a 3-block radius. Snapchat for blocks.', progress: 64, tags: ['Voice','Social'],      when: '2m ago' },
-  { id: 'AI grant assistant',  cat: 'B2B',       status: 'Validating', pri: 'P1', score: 72, badge: { text: 'VALIDATING', kind: '' },           title: <>AI <em>grant</em> assistant for indie research</>,        desc: 'Match researchers to grants. Auto-draft the packet.',          progress: 38, tags: ['AI','Research'],        when: '4h ago' },
-  { id: 'Drone logistics',     cat: 'Hardware',  status: 'Stalled',    pri: 'P2', score: 41, badge: { text: 'STALLED', kind: 'warn' },          title: 'Drone logistics for rural medical',                       desc: 'Insulin and antivenom hub-and-spoke from county clinics.',      progress: 12, tags: ['Health','Logistics'],   when: 'yesterday' },
-  { id: 'Studio OS',           cat: 'SaaS',      status: 'Draft',      pri: 'P1', score: 58, badge: { text: 'DRAFT', kind: '' },                title: <>An <em>operating system</em> for solo studios</>,         desc: 'One workspace for bets, time, books, contracts.',               progress: 22, tags: ['Studio','SaaS'],        when: '3d ago' },
-  { id: 'Field-note CRM',      cat: 'B2B',       status: 'Active',     pri: 'P0', score: 64, badge: { text: 'EXPLORING', kind: '' },            title: 'Field-note CRM for in-person sellers',                    desc: "Reps record after a meeting; the CRM fills itself in.",          progress: 30, tags: ['Sales','AI'],           when: '5d ago' },
-  { id: 'Quiet API',           cat: 'DevTool',   status: 'Active',     pri: 'P0', score: 81, badge: { text: 'WEDGE LOCKED', kind: 'hot' },      title: <>The <em>quiet</em> API — webhooks, sans Slack noise</>,  desc: 'A digest layer for webhook chaos. Right alerts, right cadence.', progress: 52, tags: ['Infra','DevTool'],      when: '1w ago' },
-  { id: 'Inventory whisperer', cat: 'B2B',       status: 'Draft',      pri: 'P2', score: 36, badge: { text: 'DRAFT', kind: '' },                title: 'Inventory whisperer for restaurants',                     desc: 'Forecasts prep par from POS + weather + events. SMS-first ops.', progress: 8,  tags: ['Hospitality'],          when: '2w ago' },
-  { id: 'Field zine',          cat: 'Consumer',  status: 'Draft',      pri: 'P2', score: 44, badge: { text: 'DRAFT', kind: '' },                title: <>A <em>field-zine</em> for hobbyist communities</>,        desc: 'Print-quality micro-zines on a 28-day cadence.',                progress: 14, tags: ['Print','Community'],    when: '2w ago' },
-  { id: 'Permit Copilot',      cat: 'B2B',       status: 'Validating', pri: 'P1', score: 69, badge: { text: 'VALIDATING', kind: '' },           title: 'Permit Copilot for small contractors',                    desc: 'Submits, tracks and chases municipal permits. AI fills forms.',  progress: 33, tags: ['Civic','SMB'],          when: '3w ago' },
-]
-
 const FILTERS = ['All', 'Active', 'Validating', 'Draft', 'Stalled']
-const CATEGORIES = ['All categories', 'Consumer', 'B2B', 'DevTool', 'Hardware', 'SaaS']
 
 export default function MyIdeasPage() {
   const router = useRouter()
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [filter, setFilter] = useState('All')
-  const [cat, setCat] = useState('All categories')
+  const [cat, setCat] = useState('all')
+  const [ideas, setIdeas] = useState<Idea[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
-  const list = ALL_IDEAS.filter(i =>
-    (filter === 'All' || i.status === filter) &&
-    (cat === 'All categories' || i.cat === cat)
-  )
+  useEffect(() => {
+    let cancelled = false
+    async function load() {
+      try {
+        setLoading(true)
+        setError(null)
+        const [cats, result] = await Promise.all([
+          CategoryAPI.getCategories(),
+          IdeaAPI.getIdeas({ limit: 100, sort_by: 'updated_at', sort_order: 'desc' }),
+        ])
+        if (cancelled) return
+        setCategories(cats)
+        setIdeas(result.ideas)
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load ideas')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [])
+
+  const categoryOptions = [
+    { id: 'all', name: 'All categories' },
+    ...categories.map(c => ({ id: c.id, name: c.name })),
+  ]
+
+  const list = ideas.filter(i => {
+    const catMatch = cat === 'all' || i.category_id === cat
+    return matchesStatusFilter(i, filter) && catMatch
+  })
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <div className="ph-eyebrow">My Ideas · {ALL_IDEAS.length} total</div>
+          <div className="ph-eyebrow">My Ideas · {ideas.length} total</div>
           <h1>Every spark you&apos;ve <em>filed</em>.</h1>
-          <div className="ph-sub">Drafts, validations, active projects — sorted by how recently the Copilot reasoned about them.</div>
+          <div className="ph-sub">Drafts, validations, active projects — sorted by how recently they were updated.</div>
         </div>
         <div className="page-head-actions">
-          <button className="btn-sm ghost"><DI.Filter/> Filter</button>
-          <button className="btn-sm solid"><DI.Plus/> New idea</button>
+          <button className="btn-sm ghost" onClick={() => router.push(routes.copilot)}><DI.Spark/> Ask Copilot</button>
+          <button className="btn-sm solid" onClick={() => router.push(routes.newIdea)}><DI.Plus/> New idea</button>
         </div>
       </div>
+
+      {error && (
+        <div className="card" style={{ marginBottom: 16, color: 'var(--warn)' }}>{error}</div>
+      )}
 
       <div className="ideas-filterbar">
         <div className="seg">
@@ -51,51 +77,58 @@ export default function MyIdeasPage() {
         <div className="chips">
           {FILTERS.map(f => <button key={f} className={`chip ${filter === f ? 'on' : ''}`} onClick={() => setFilter(f)}>{f}</button>)}
           <span style={{ width: 1, height: 18, background: 'var(--line-2)', margin: '0 4px' }}/>
-          {CATEGORIES.map(c => <button key={c} className={`chip ${cat === c ? 'on' : ''}`} onClick={() => setCat(c)}>{c}</button>)}
+          {categoryOptions.map(c => (
+            <button key={c.id} className={`chip ${cat === c.id ? 'on' : ''}`} onClick={() => setCat(c.id)}>{c.name}</button>
+          ))}
         </div>
         <span className="sort"><DI.Down/> sort · recent</span>
       </div>
 
-      {list.length === 0 ? (
+      {loading ? (
+        <div className="empty"><p style={{ color: 'var(--fg-2)' }}>Loading ideas…</p></div>
+      ) : list.length === 0 ? (
         <div className="empty">
           <div className="em-icon"><DI.Bulb/></div>
           <h3>No ideas match this filter</h3>
-          <p>Try widening your filter, or capture a new spark.</p>
+          <p>Try widening your filter, or capture a new spark via Copilot.</p>
         </div>
       ) : view === 'grid' ? (
         <div className="ideas-grid">
-          {list.map(i => (
-            <div key={i.id} className="idea" onClick={() => router.push(`/dashboard/ideas/${encodeURIComponent(i.id)}`)}>
-              <div className="i-row1">
-                <span className={`i-tag ${i.badge.kind}`}>{i.badge.text}</span>
-                <span className="i-score">score · <b>{i.score}</b></span>
+          {list.map(i => {
+            const badge = statusBadge(i.status)
+            const score = ideaScore(i)
+            return (
+              <div key={i.id} className="idea" onClick={() => router.push(routes.idea(i.id))}>
+                <div className="i-row1">
+                  <span className={`i-tag ${badge.kind}`}>{badge.text}</span>
+                  <span className="i-score">score · <b>{score}</b></span>
+                </div>
+                <h3>{i.title}</h3>
+                <p className="i-desc">{i.description || 'No description yet.'}</p>
+                <div className="i-prog"><div className="bar" style={{ width: `${i.progress_percentage}%` }}/></div>
+                <div className="i-foot">
+                  <div className="tags">{(i.tags || []).slice(0, 3).map(t => <span key={t}>{t}</span>)}</div>
+                  <span className="sep"/>
+                  <span>{timeAgo(i.updated_at)}</span>
+                </div>
               </div>
-              <h3>{i.title}</h3>
-              <p className="i-desc">{i.desc}</p>
-              <div className="i-prog"><div className="bar" style={{ width: `${i.progress}%` }}/></div>
-              <div className="i-foot">
-                <div className="tags">{i.tags.map(t => <span key={t}>{t}</span>)}</div>
-                <span className="sep"/>
-                <span>{i.when}</span>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       ) : (
         <div className="card" style={{ padding: 0 }}>
           <div className="ci-table">
             <div className="ci-row h">
-              <span/><span>Idea</span><span>Category</span><span>Status</span><span>Priority</span>
+              <span/><span>Idea</span><span>Status</span><span>Priority</span>
               <span style={{ textAlign: 'right' }}>Score</span>
             </div>
             {list.map(i => (
-              <div key={i.id} className="ci-row" onClick={() => router.push(`/dashboard/ideas/${encodeURIComponent(i.id)}`)}>
-                <span className="ci-logo">{i.id[0]}</span>
-                <span className="ci-name">{i.id}<span className="sub">{i.tags.join(' · ')}</span></span>
-                <span className="ci-mark">{i.cat}</span>
-                <span><span className={`i-tag ${i.badge.kind}`}>{i.badge.text}</span></span>
-                <span className="ci-mark">{i.pri}</span>
-                <span className="ci-score">{i.score}</span>
+              <div key={i.id} className="ci-row" onClick={() => router.push(routes.idea(i.id))}>
+                <span className="ci-logo">{i.title[0]}</span>
+                <span className="ci-name">{i.title}<span className="sub">{(i.tags || []).join(' · ')}</span></span>
+                <span><span className={`i-tag ${statusBadge(i.status).kind}`}>{statusLabel(i.status)}</span></span>
+                <span className="ci-mark">{i.priority}</span>
+                <span className="ci-score">{ideaScore(i)}</span>
               </div>
             ))}
           </div>
