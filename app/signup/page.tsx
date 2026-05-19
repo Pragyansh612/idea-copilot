@@ -75,7 +75,8 @@ function SignupForm() {
       const refresh_token = response?.data?.session?.refresh_token
 
       if (!access_token || !refresh_token) {
-        throw new Error('Account created but sign-in tokens were missing. Try logging in.')
+        router.push(`${routes.login}?message=${encodeURIComponent('Account created. Check your email to confirm, then sign in.')}`)
+        return
       }
 
       TokenManager.setTokens(access_token, refresh_token)

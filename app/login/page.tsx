@@ -49,6 +49,7 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get('redirect') || '/dashboard'
+  const infoMessage = searchParams.get('message')
 
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
@@ -170,6 +171,17 @@ function LoginForm() {
               style={inputStyle}
             />
           </div>
+
+          {infoMessage && !err && (
+            <div style={{
+              fontSize: 12.5, color: 'var(--accent)', fontFamily: 'var(--font-mono)',
+              padding: '8px 12px', borderRadius: 8,
+              background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+              border: '1px solid color-mix(in srgb, var(--accent) 24%, transparent)',
+            }}>
+              {infoMessage}
+            </div>
+          )}
 
           {err && (
             <div style={{
