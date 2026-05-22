@@ -1,7 +1,7 @@
 'use client'
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
-import { PageError, PageLoading } from '@/components/dashboard/PageState'
+import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import {
   AIAPI,
   CompetitorAPI,
@@ -17,7 +17,7 @@ import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContex
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
-const VALID_TABS = ['features', 'phases', 'ai', 'comp'] as const
+const VALID_TABS = ['features', 'phases', 'ai', 'comp', 'attachments'] as const
 
 export default function IdeaDetailPage() {
   return (
@@ -130,6 +130,17 @@ function IdeaDetailContent() {
           >
             <DI.Export/> Export
           </button>
+          <button
+            type="button"
+            className="btn-sm ghost"
+            title="View attachments for this idea"
+            onClick={() => {
+              setTab('attachments')
+              router.replace(routes.ideaTab(ideaId, 'attachments'), { scroll: false })
+            }}
+          >
+            <DI.Folder/> Attachments
+          </button>
           <button type="button" className="btn-sm solid" onClick={() => router.push(routes.copilotForIdea(ideaId))}>
             <DI.Spark/> Ask Copilot
           </button>
@@ -189,6 +200,7 @@ function IdeaDetailContent() {
               { id: 'phases', label: 'Phases', count: String(phases.length) },
               { id: 'ai', label: 'AI suggestions', count: String(suggestions.length) },
               { id: 'comp', label: 'Competitors', count: String(competitors.length) },
+              { id: 'attachments', label: 'Attachments', count: '' },
             ].map(t => (
               <button
                 key={t.id}
@@ -261,6 +273,22 @@ function IdeaDetailContent() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {tab === 'attachments' && (
+            <div className="id-panel">
+              <div className="id-panel-head"><h3>Attachments</h3></div>
+              <PageEmpty
+                icon={<DI.Folder />}
+                title="File attachments"
+                description="Upload screenshots, docs, and references for this idea. Full upload UI connects to POST /api/attachments/upload in a later release."
+                action={
+                  <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.copilotForIdea(ideaId))}>
+                    <DI.Spark/> Ask Copilot about files
+                  </button>
+                }
+              />
             </div>
           )}
 

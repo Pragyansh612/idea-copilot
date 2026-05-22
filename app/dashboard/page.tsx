@@ -1,10 +1,11 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { AchievementAPI, type Achievement } from '@/lib/api/achievement'
 import { IdeaAPI, type Idea } from '@/lib/api/idea'
 import { NotificationAPI, type Notification } from '@/lib/api/notification'
 import { UserAPI, type UserProfile, type UserStats } from '@/lib/api/user'
-import { PageError, PageLoading } from '@/components/dashboard/PageState'
+import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import { displayName, ideaScore, statusBadge, timeAgo } from '@/lib/dashboard/format'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
@@ -41,21 +42,24 @@ export default function DashboardHome() {
   const [stats, setStats] = useState<UserStats | null>(null)
   const [recentIdeas, setRecentIdeas] = useState<Idea[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [achievements, setAchievements] = useState<Achievement[]>([])
 
   async function load() {
     try {
       setLoading(true)
       setError(null)
-      const [prof, userStats, ideasData, notifs] = await Promise.all([
+      const [prof, userStats, ideasData, notifs, ach] = await Promise.all([
         UserAPI.getProfile(),
         UserAPI.getStats(),
         IdeaAPI.getIdeas({ limit: 6, sort_by: 'updated_at', sort_order: 'desc' }),
         NotificationAPI.getNotifications(false),
+        AchievementAPI.getUserAchievements().catch(() => []),
       ])
       setProfile(prof)
       setStats(userStats)
       setRecentIdeas(ideasData.ideas)
       setNotifications(notifs.notifications.slice(0, 4))
+      setAchievements(ach.slice(0, 3))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard')
     } finally {
@@ -111,25 +115,48 @@ export default function DashboardHome() {
 
       {error && <PageError message={error} onRetry={load} />}
 
+      {loading && !error && <PageLoading label="Loading your workspace…" />}
+
+      {!loading && !error && (
+      <>
+      <div className="founder-progress dash-card">
+        <div className="founder-progress-main">
+          <div className="founder-progress-ring">L{stats?.current_level ?? 1}</div>
+          <div>
+            <p className="founder-progress-title">Founder progress</p>
+            <p className="founder-progress-meta">
+              {stats?.total_xp ?? 0} XP · {stats?.current_streak ?? 0} day streak · {stats?.ideas_created ?? 0} ideas captured
+            </p>
+          </div>
+        </div>
+        {achievements.length > 0 ? (
+          <div className="founder-progress-achievements">
+            {achievements.map(a => (
+              <span key={a.id} className="founder-achievement-pill" title={a.description}>
+                {a.title}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <span className="founder-achievement-pill">Keep building to unlock milestones</span>
+        )}
+      </div>
+
       <div className="section-block">
         <div className="section-block-head">
           <h2>This <em>week</em>, at a glance</h2>
           <span className="sb-sub">from your account stats</span>
         </div>
-        {loading ? (
-          <PageLoading label="Loading stats…" />
-        ) : (
-          <div className="stats">
-            {statCards.map(s => (
-              <div key={s.label} className="stat">
-                <div className="s-label">{s.icon} {s.label}</div>
-                <div className="s-value">{s.value}</div>
-                <div className="s-delta"><DI.Up/> {s.delta}</div>
-                <Spark className="s-spark" data={s.spark} />
-              </div>
-            ))}
-          </div>
-        )}
+        <div className="stats">
+          {statCards.map(s => (
+            <div key={s.label} className="stat">
+              <div className="s-label">{s.icon} {s.label}</div>
+              <div className="s-value">{s.value}</div>
+              <div className="s-delta"><DI.Up/> {s.delta}</div>
+              <Spark className="s-spark" data={s.spark} />
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="section-block">
@@ -139,13 +166,17 @@ export default function DashboardHome() {
             View all {stats?.ideas_created ?? recentIdeas.length} →
           </a>
         </div>
-        {loading ? (
-          <PageLoading label="Loading ideas…" />
-        ) : recentIdeas.length === 0 ? (
-          <div className="empty">
-            <h3>No ideas yet</h3>
-            <p>Start a conversation with Copilot or add your first idea.</p>
-          </div>
+        {recentIdeas.length === 0 ? (
+          <PageEmpty
+            icon={<DI.Bulb />}
+            title="No ideas yet"
+            description="Start a conversation with Copilot or add your first idea."
+            action={
+              <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
+                <DI.Plus /> New idea
+              </button>
+            }
+          />
         ) : (
           <div className="ideas-grid">
             {recentIdeas.map(i => {
@@ -178,7 +209,16 @@ export default function DashboardHome() {
           <span className="sb-sub">from Copilot & workspace</span>
         </div>
         {notifications.length === 0 ? (
-          <p style={{ color: 'var(--fg-2)' }}>No notifications yet.</p>
+          <PageEmpty
+            icon={<DI.Bell />}
+            title="No notifications yet"
+            description="Copilot and workspace events will appear here."
+            action={
+              <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.notifications)}>
+                Open notifications
+              </button>
+            }
+          />
         ) : (
           <div className="insights">
             {notifications.map(n => (
@@ -194,6 +234,8 @@ export default function DashboardHome() {
           </div>
         )}
       </div>
+      </>
+      )}
     </div>
   )
 }

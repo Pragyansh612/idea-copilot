@@ -65,7 +65,7 @@ export default function NewIdeaPage() {
         </div>
       </div>
 
-      <form className="card" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <form className="dash-card" onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {error && (
           <div style={{ color: 'var(--warn)', fontSize: 13, fontFamily: 'var(--font-mono)' }}>{error}</div>
         )}

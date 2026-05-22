@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import IdeaDraftPanel from '@/components/copilot/IdeaDraftPanel'
 import { CopilotAPI, type ChatHistoryItem } from '@/lib/api/copilot'
@@ -13,6 +13,7 @@ import {
   saveIdeaDraft,
   type IdeaDraft,
 } from '@/lib/copilot/idea-draft'
+import { PageError, PageLoading } from '@/components/dashboard/PageState'
 import { timeAgo } from '@/lib/dashboard/format'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
@@ -23,7 +24,7 @@ type Message = { id: string; role: 'user' | 'ai'; content: string; display?: str
 
 export default function CopilotPage() {
   return (
-    <Suspense fallback={<div className="page"><p style={{ color: 'var(--fg-2)' }}>Loading Copilot…</p></div>}>
+    <Suspense fallback={<div className="page"><PageLoading label="Loading Copilot…" /></div>}>
       <CopilotPageInner />
     </Suspense>
   )
@@ -45,29 +46,10 @@ function CopilotPageInner() {
   const [error, setError] = useState<string | null>(null)
   const streamRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    loadInitial()
-  }, [])
-
-  useEffect(() => {
-    const ideaParam = searchParams.get('idea')
-    if (ideaParam) setSelectedIdeaId(ideaParam)
-    if (searchParams.get('draft') === '1') {
-      const stored = loadIdeaDraft()
-      if (stored) {
-        setIdeaDraft(stored)
-        setShowDraftPanel(true)
-      }
-    }
-  }, [searchParams])
-
-  useEffect(() => {
-    streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, sending])
-
-  async function loadInitial() {
+  const loadInitial = useCallback(async () => {
     try {
       setLoading(true)
+      setError(null)
       const [hist, ideaResult] = await Promise.all([
         CopilotAPI.getHistory(30, 0),
         IdeaAPI.getIdeas({ limit: 20, sort_by: 'updated_at', sort_order: 'desc' }),
@@ -85,7 +67,27 @@ function CopilotPageInner() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [searchParams])
+
+  useEffect(() => {
+    loadInitial()
+  }, [loadInitial])
+
+  useEffect(() => {
+    const ideaParam = searchParams.get('idea')
+    if (ideaParam) setSelectedIdeaId(ideaParam)
+    if (searchParams.get('draft') === '1') {
+      const stored = loadIdeaDraft()
+      if (stored) {
+        setIdeaDraft(stored)
+        setShowDraftPanel(true)
+      }
+    }
+  }, [searchParams])
+
+  useEffect(() => {
+    streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, sending])
 
   function loadConversation(item: ChatHistoryItem) {
     setActiveId(item.id)
@@ -177,18 +179,19 @@ function CopilotPageInner() {
         </div>
       </div>
 
-      {error && <div className="card" style={{ marginBottom: 12, color: 'var(--warn)' }}>{error}</div>}
+      {error && !loading && <PageError message={error} onRetry={loadInitial} />}
 
-      {showDraftPanel && ideaDraft && (
+      {loading && !error && <PageLoading label="Loading Copilot…" />}
+
+      {!loading && !error && showDraftPanel && ideaDraft && (
         <IdeaDraftPanel draft={ideaDraft} onChange={updateDraft} onDismiss={dismissDraft} />
       )}
 
+      {!loading && !error && (
       <div className="copilot-page">
         <div className="cp-history">
           <div className="ch-head">Conversations</div>
-          {loading ? (
-            <p style={{ padding: 12, fontSize: 13, color: 'var(--fg-2)' }}>Loading…</p>
-          ) : history.length === 0 ? (
+          {history.length === 0 ? (
             <p style={{ padding: 12, fontSize: 13, color: 'var(--fg-2)' }}>No history yet.</p>
           ) : history.map(h => (
             <button
@@ -288,6 +291,7 @@ function CopilotPageInner() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }

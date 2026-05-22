@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react'
 import { AuthAPI } from '@/lib/api/auth'
 import { UserAPI, type UserProfile } from '@/lib/api/user'
+import SettingsApiTokens from '@/components/dashboard/SettingsApiTokens'
+import { PageError, PageLoading } from '@/components/dashboard/PageState'
 import { displayName } from '@/lib/dashboard/format'
 import * as DI from '@/components/dashboard/Icons'
 import type { ReactNode } from 'react'
@@ -43,9 +45,9 @@ function Toggle({ on, onChange }: { on: boolean; onChange?: (v: boolean) => void
 const sections = [
   { id: 'account',   label: 'Account',        icon: <DI.Cog/> },
   { id: 'workspace', label: 'Workspace',       icon: <DI.Folder/> },
+  { id: 'tokens',    label: 'API tokens',     icon: <DI.Bolt/> },
   { id: 'ai',        label: 'AI preferences', icon: <DI.Sparkles/> },
   { id: 'notifs',    label: 'Notifications',  icon: <DI.Bell/> },
-  // { id: 'billing',   label: 'Plan & billing', icon: <DI.Bolt/> }, // hidden — free for now
 ]
 
 export default function SettingsPage() {
@@ -58,14 +60,25 @@ export default function SettingsPage() {
   const [auto, setAuto] = useState(true)
   const [refresh, setRefresh] = useState(false)
 
+  async function loadProfile() {
+    try {
+      setLoading(true)
+      setError(null)
+      const [prof, me] = await Promise.all([
+        UserAPI.getProfile(),
+        AuthAPI.getMe().catch(() => null),
+      ])
+      setProfile(prof)
+      setAccountEmail(me?.email ?? prof.email ?? '')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load profile')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    Promise.all([UserAPI.getProfile(), AuthAPI.getMe().catch(() => null)])
-      .then(([prof, me]) => {
-        setProfile(prof)
-        setAccountEmail(me?.email ?? prof.email ?? '')
-      })
-      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load profile'))
-      .finally(() => setLoading(false))
+    loadProfile()
   }, [])
 
   const name = displayName(profile?.email, profile?.display_name)
@@ -80,10 +93,10 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {error && <div className="card" style={{ marginBottom: 16, color: 'var(--warn)' }}>{error}</div>}
+      {error && section !== 'tokens' && <PageError message={error} onRetry={loadProfile} />}
 
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 20, alignItems: 'flex-start' }}>
-        <div className="card" style={{ padding: 10 }}>
+        <div className="dash-card" style={{ padding: 10 }}>
           {sections.map(s => (
             <button key={s.id} className={`settings-nav-item ${section === s.id ? 'active' : ''}`} onClick={() => setSection(s.id)}>
               {s.icon}<span>{s.label}</span>
@@ -92,8 +105,8 @@ export default function SettingsPage() {
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {loading ? (
-            <p style={{ color: 'var(--fg-2)' }}>Loading profile…</p>
+          {loading && section !== 'tokens' ? (
+            <PageLoading label="Loading profile…" />
           ) : section === 'account' ? (
             <SetCard title="Profile" desc="Loaded from GET /api/profile.">
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, paddingBottom: 16, borderBottom: '1px solid var(--line)' }}>
@@ -112,6 +125,10 @@ export default function SettingsPage() {
             <SetCard title="Workspace" desc="Your personal IdeaCopilot workspace.">
               <Field label="Display name"><input style={inp} readOnly value={profile?.display_name ?? name}/></Field>
               <Field label="Username"><input style={inp} readOnly value={profile?.username ?? '—'} placeholder="Not set"/></Field>
+            </SetCard>
+          ) : section === 'tokens' ? (
+            <SetCard title="API tokens" desc="Manage programmatic access to your workspace.">
+              <SettingsApiTokens />
             </SetCard>
           ) : section === 'ai' ? (
             <SetCard title="AI behavior" desc="UI preferences (not persisted to API yet).">

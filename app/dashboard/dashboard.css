@@ -1803,12 +1803,71 @@ body.app-body {
 }
 
 /* Shared dashboard surfaces (Phase 0 consistency) */
-.dash-card {
+.dash-card,
+.page .card {
   border-radius: var(--r-md);
   border: 1px solid var(--line-2);
   background: var(--surface);
   box-shadow: var(--shadow-soft);
+}
+.dash-card {
   padding: 18px 20px;
+}
+
+/* Founder progress strip (dashboard home) */
+.founder-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.founder-progress-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.founder-progress-ring {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-line);
+  background: var(--accent-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--accent);
+}
+.founder-progress-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--fg);
+  margin: 0 0 4px;
+}
+.founder-progress-meta {
+  font-size: 13px;
+  color: var(--fg-2);
+  margin: 0;
+}
+.founder-progress-achievements {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.founder-achievement-pill {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  color: var(--fg-2);
+  background: color-mix(in srgb, var(--fg) 3%, transparent);
 }
 .page-state {
   display: flex;
