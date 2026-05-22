@@ -1,22 +1,9 @@
 'use client'
-import { useState, useEffect } from 'react'
 
+import { useThemeContext } from '@/components/ThemeProvider'
+
+/** Shared theme state — persists to localStorage and `data-theme` on `<html>`. */
 export function useTheme(): [string, () => void] {
-  const [theme, setTheme] = useState<string>('dark')
-
-  useEffect(() => {
-    const saved = localStorage.getItem('ic-theme')
-    if (saved === 'light' || saved === 'dark') {
-      setTheme(saved)
-    } else {
-      setTheme(window.matchMedia?.('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
-    }
-  }, [])
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme)
-    localStorage.setItem('ic-theme', theme)
-  }, [theme])
-
-  return [theme, () => setTheme(t => (t === 'light' ? 'dark' : 'light'))]
+  const { theme, toggleTheme } = useThemeContext()
+  return [theme, toggleTheme]
 }

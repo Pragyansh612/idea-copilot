@@ -13,16 +13,12 @@ export function useAuth() {
   }, []);
 
   const logout = async () => {
-    TokenManager.clearTokens();
-
-    await fetch('/api/auth/logout', {
-      method: 'POST',
-    });
-
-    setIsAuthenticated(false);
-    router.push('/login');
-    router.refresh();
-  };
+    const { clearSession } = await import('@/lib/auth/session')
+    await clearSession()
+    setIsAuthenticated(false)
+    router.push('/login')
+    router.refresh()
+  }
 
   return {
     isAuthenticated,

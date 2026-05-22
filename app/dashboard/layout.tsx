@@ -3,9 +3,8 @@ import './dashboard.css'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { useTheme } from '@/hooks/useTheme'
+import ThemeToggle from '@/components/ThemeToggle'
 import { useAuth } from '@/hooks/useAuth'
-import { TokenManager } from '@/lib/auth/tokens'
 import { IdeaAPI } from '@/lib/api/idea'
 import { NotificationAPI } from '@/lib/api/notification'
 import { AuthAPI } from '@/lib/api/auth'
@@ -52,7 +51,6 @@ function getCrumbs(pathname: string): string[] {
 }
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const [theme, toggleTheme] = useTheme()
   const { logout } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
@@ -68,12 +66,6 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     document.body.classList.add('app-body')
     return () => document.body.classList.remove('app-body')
   }, [])
-
-  useEffect(() => {
-    if (!TokenManager.isAuthenticated()) {
-      router.replace(`${routes.login}?redirect=${encodeURIComponent(pathname)}`)
-    }
-  }, [pathname, router])
 
   useEffect(() => {
     contentRef.current?.scrollTo(0, 0)
@@ -196,9 +188,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <button className="tb-btn has-dot" onClick={() => router.push(routes.notifications)} title="Notifications">
               <DI.Bell />
             </button>
-            <button className="tb-btn" onClick={toggleTheme} title="Toggle theme">
-              {theme === 'light' ? <DI.Moon /> : <DI.Sun />}
-            </button>
+            <ThemeToggle className="tb-btn" />
           </div>
         </div>
 

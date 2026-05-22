@@ -2,10 +2,10 @@ import Link from 'next/link'
 import { routes } from '@/lib/routes'
 
 const productLinks = [
-  { label: 'Dashboard', href: routes.dashboard },
-  { label: 'Copilot', href: routes.copilot },
-  { label: 'Competitor radar', href: routes.competitors },
-  { label: 'Roadmap planner', href: routes.roadmaps },
+  { label: 'Dashboard', href: routes.productDashboard },
+  { label: 'Copilot', href: routes.productCopilot },
+  { label: 'Competitor radar', href: routes.productCompetitors },
+  { label: 'Roadmap planner', href: routes.productRoadmaps },
   // { label: 'Pricing', href: routes.pricing },
 ]
 
@@ -19,7 +19,7 @@ const resourceLinks = [
 const companyLinks = [
   { label: 'Why IdeaCopilot', href: routes.why },
   { label: 'The problem', href: routes.problem },
-  { label: 'Contact', href: 'mailto:hello@ideacopilot.app' },
+  { label: 'Contact', href: routes.contact },
 ]
 
 function FooterCol({ title, links }: { title: string; links: { label: string; href: string }[] }) {

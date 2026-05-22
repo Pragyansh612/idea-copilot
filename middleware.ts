@@ -1,11 +1,15 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
+/**
+ * Protects /dashboard/* only. Public marketing + /product/* stay open.
+ * Do not redirect /login → /dashboard here (stale cookies caused redirect loops).
+ * Login/signup pages validate the session client-side via /api/auth/me.
+ */
 export function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
   const isDashboardPath = path.startsWith('/dashboard')
-  const isAuthPath = path.startsWith('/login') || path.startsWith('/signup')
-  const token = request.cookies.get('access_token')?.value || ''
+  const token = request.cookies.get('access_token')?.value?.trim() || ''
 
   if (isDashboardPath && !token) {
     const loginUrl = new URL('/login', request.url)
@@ -13,13 +17,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
-  if (isAuthPath && token) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
-  }
-
   return NextResponse.next()
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/login', '/signup'],
+  matcher: ['/dashboard/:path*'],
 }

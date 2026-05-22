@@ -18,9 +18,9 @@ export async function POST(request: Request) {
 
     const isProd = process.env.NODE_ENV === 'production';
 
-    // Middleware reads access_token; client also keeps tokens in localStorage for API calls.
+    // Readable by middleware + TokenManager cookie fallback (httpOnly cookies caused auth redirect loops).
     cookieStore.set('access_token', access_token, {
-      httpOnly: true,
+      httpOnly: false,
       secure: isProd,
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 7,
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     });
 
     cookieStore.set('refresh_token', refresh_token, {
-      httpOnly: true,
+      httpOnly: false,
       secure: isProd,
       sameSite: 'lax',
       maxAge: 60 * 60 * 24 * 30,

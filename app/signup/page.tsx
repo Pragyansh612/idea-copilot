@@ -3,6 +3,7 @@ import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AuthAPI } from '@/lib/api/auth'
+import { clearSession } from '@/lib/auth/session'
 import { TokenManager } from '@/lib/auth/tokens'
 import { routes } from '@/lib/routes'
 
@@ -53,11 +54,22 @@ function SignupForm() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
 
   useEffect(() => {
-    if (TokenManager.isAuthenticated()) {
-      router.push(routes.dashboard)
-    } else {
-      setIsCheckingAuth(false)
+    let cancelled = false
+    async function checkExistingSession() {
+      if (!TokenManager.isAuthenticated()) {
+        if (!cancelled) setIsCheckingAuth(false)
+        return
+      }
+      try {
+        await AuthAPI.getMe()
+        if (!cancelled) router.replace(routes.dashboard)
+      } catch {
+        await clearSession()
+        if (!cancelled) setIsCheckingAuth(false)
+      }
     }
+    checkExistingSession()
+    return () => { cancelled = true }
   }, [router])
 
   async function handleSubmit(e: React.FormEvent) {
