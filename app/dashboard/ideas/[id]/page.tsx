@@ -1,6 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { Suspense, useCallback, useEffect, useState } from 'react'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
+import { PageError, PageLoading } from '@/components/dashboard/PageState'
 import {
   AIAPI,
   CompetitorAPI,
@@ -16,9 +17,20 @@ import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContex
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
+const VALID_TABS = ['features', 'phases', 'ai', 'comp'] as const
+
 export default function IdeaDetailPage() {
+  return (
+    <Suspense fallback={<div className="page"><PageLoading label="Loading idea…" /></div>}>
+      <IdeaDetailContent />
+    </Suspense>
+  )
+}
+
+function IdeaDetailContent() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const ideaId = params.id as string
   const [tab, setTab] = useState('features')
   const [idea, setIdea] = useState<Idea | null>(null)
@@ -35,33 +47,41 @@ export default function IdeaDetailPage() {
   }, [setIdeaDetailTitle])
 
   useEffect(() => {
-    if (!ideaId) return
-    let cancelled = false
-    async function load() {
-      try {
-        setLoading(true)
-        setError(null)
-        const detail = await IdeaAPI.getIdea(ideaId)
-        const [sugs, comp] = await Promise.all([
-          AIAPI.getSuggestions(ideaId).catch(() => []),
-          CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] })),
-        ])
-        if (cancelled) return
-        setIdea(detail.idea)
-        setIdeaDetailTitle(detail.idea.title)
-        setFeatures(detail.features || [])
-        setPhases(detail.phases || [])
-        setSuggestions(sugs)
-        setCompetitors(comp.research || comp.competitors || [])
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load idea')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+    const t = searchParams.get('tab')
+    if (t && (VALID_TABS as readonly string[]).includes(t)) {
+      setTab(t)
     }
+  }, [searchParams])
+
+  const showExportBanner = searchParams.get('action') === 'export'
+
+  const load = useCallback(async () => {
+    if (!ideaId) return
+    try {
+      setLoading(true)
+      setError(null)
+      const detail = await IdeaAPI.getIdea(ideaId)
+      const [sugs, comp] = await Promise.all([
+        AIAPI.getSuggestions(ideaId).catch(() => []),
+        CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] })),
+      ])
+      setIdea(detail.idea)
+      setIdeaDetailTitle(detail.idea.title)
+      setFeatures(detail.features || [])
+      setPhases(detail.phases || [])
+      setSuggestions(sugs)
+      setCompetitors(comp.research || comp.competitors || [])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load idea')
+      setIdea(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [ideaId, setIdeaDetailTitle])
+
+  useEffect(() => {
     load()
-    return () => { cancelled = true }
-  }, [ideaId])
+  }, [load])
 
   async function toggleFeature(feature: Feature) {
     try {
@@ -73,14 +93,16 @@ export default function IdeaDetailPage() {
   }
 
   if (loading) {
-    return <div className="page"><p style={{ color: 'var(--fg-2)' }}>Loading idea…</p></div>
+    return <div className="page"><PageLoading label="Loading idea…" /></div>
   }
 
   if (error || !idea) {
     return (
       <div className="page">
-        <p style={{ color: 'var(--warn)' }}>{error || 'Idea not found'}</p>
-        <button className="btn-sm ghost" onClick={() => router.push(routes.ideas)}>Back to ideas</button>
+        <PageError message={error || 'Idea not found'} onRetry={load} />
+        <button type="button" className="btn-sm ghost" style={{ marginTop: 12 }} onClick={() => router.push(routes.ideas)}>
+          Back to ideas
+        </button>
       </div>
     )
   }
@@ -97,14 +119,31 @@ export default function IdeaDetailPage() {
           <div className="ph-sub">{idea.description || 'No description yet.'}</div>
         </div>
         <div className="page-head-actions">
-          <button className="btn-sm ghost" onClick={() => router.push(routes.ideas)}>
+          <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideas)}>
             <DI.CaretRight style={{ transform: 'rotate(180deg)' }}/> Back
           </button>
-          <button className="btn-sm solid" onClick={() => router.push(routes.copilotForIdea(ideaId))}>
+          <button
+            type="button"
+            className="btn-sm ghost"
+            onClick={() => router.push(routes.ideaExport(ideaId))}
+            aria-current={showExportBanner ? 'true' : undefined}
+          >
+            <DI.Export/> Export
+          </button>
+          <button type="button" className="btn-sm solid" onClick={() => router.push(routes.copilotForIdea(ideaId))}>
             <DI.Spark/> Ask Copilot
           </button>
         </div>
       </div>
+
+      {showExportBanner && (
+        <div className="idea-export-banner dash-card">
+          <span>Export this idea as PDF, Markdown, or a bundle — full export UI ships in a later update. Use Copilot to draft content now.</span>
+          <button type="button" className="btn-sm solid" onClick={() => router.push(routes.copilotForIdea(ideaId))}>
+            <DI.Spark/> Draft with Copilot
+          </button>
+        </div>
+      )}
 
       <div className="idea-detail">
         <div className="id-left">
@@ -151,7 +190,15 @@ export default function IdeaDetailPage() {
               { id: 'ai', label: 'AI suggestions', count: String(suggestions.length) },
               { id: 'comp', label: 'Competitors', count: String(competitors.length) },
             ].map(t => (
-              <button key={t.id} className={`id-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>
+              <button
+                key={t.id}
+                type="button"
+                className={`id-tab ${tab === t.id ? 'active' : ''}`}
+                onClick={() => {
+                  setTab(t.id)
+                  router.replace(routes.ideaTab(ideaId, t.id), { scroll: false })
+                }}
+              >
                 {t.label} {t.count && <span className="count">{t.count}</span>}
               </button>
             ))}

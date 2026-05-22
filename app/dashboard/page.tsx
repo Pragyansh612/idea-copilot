@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { IdeaAPI, type Idea } from '@/lib/api/idea'
 import { NotificationAPI, type Notification } from '@/lib/api/notification'
 import { UserAPI, type UserProfile, type UserStats } from '@/lib/api/user'
+import { PageError, PageLoading } from '@/components/dashboard/PageState'
 import { displayName, ideaScore, statusBadge, timeAgo } from '@/lib/dashboard/format'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
@@ -41,31 +42,29 @@ export default function DashboardHome() {
   const [recentIdeas, setRecentIdeas] = useState<Idea[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        setLoading(true)
-        setError(null)
-        const [prof, userStats, ideasData, notifs] = await Promise.all([
-          UserAPI.getProfile(),
-          UserAPI.getStats(),
-          IdeaAPI.getIdeas({ limit: 6, sort_by: 'updated_at', sort_order: 'desc' }),
-          NotificationAPI.getNotifications(false),
-        ])
-        if (cancelled) return
-        setProfile(prof)
-        setStats(userStats)
-        setRecentIdeas(ideasData.ideas)
-        setNotifications(notifs.notifications.slice(0, 4))
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load dashboard')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+  async function load() {
+    try {
+      setLoading(true)
+      setError(null)
+      const [prof, userStats, ideasData, notifs] = await Promise.all([
+        UserAPI.getProfile(),
+        UserAPI.getStats(),
+        IdeaAPI.getIdeas({ limit: 6, sort_by: 'updated_at', sort_order: 'desc' }),
+        NotificationAPI.getNotifications(false),
+      ])
+      setProfile(prof)
+      setStats(userStats)
+      setRecentIdeas(ideasData.ideas)
+      setNotifications(notifs.notifications.slice(0, 4))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load dashboard')
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
     load()
-    return () => { cancelled = true }
   }, [])
 
   const now = new Date()
@@ -110,7 +109,7 @@ export default function DashboardHome() {
         </div>
       </div>
 
-      {error && <div className="card" style={{ marginBottom: 16, color: 'var(--warn)' }}>{error}</div>}
+      {error && <PageError message={error} onRetry={load} />}
 
       <div className="section-block">
         <div className="section-block-head">
@@ -118,7 +117,7 @@ export default function DashboardHome() {
           <span className="sb-sub">from your account stats</span>
         </div>
         {loading ? (
-          <p style={{ color: 'var(--fg-2)' }}>Loading stats…</p>
+          <PageLoading label="Loading stats…" />
         ) : (
           <div className="stats">
             {statCards.map(s => (
@@ -141,7 +140,7 @@ export default function DashboardHome() {
           </a>
         </div>
         {loading ? (
-          <p style={{ color: 'var(--fg-2)' }}>Loading ideas…</p>
+          <PageLoading label="Loading ideas…" />
         ) : recentIdeas.length === 0 ? (
           <div className="empty">
             <h3>No ideas yet</h3>

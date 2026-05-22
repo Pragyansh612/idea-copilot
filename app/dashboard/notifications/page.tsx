@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { NotificationAPI, type Notification } from '@/lib/api/notification'
+import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import { timeAgo } from '@/lib/dashboard/format'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
@@ -68,7 +69,7 @@ export default function NotificationsPage() {
         </div>
       </div>
 
-      {error && <div className="card" style={{ marginBottom: 16, color: 'var(--warn)' }}>{error}</div>}
+      {error && <PageError message={error} onRetry={load} />}
 
       <div className="ideas-filterbar">
         <div className="chips">
@@ -76,11 +77,15 @@ export default function NotificationsPage() {
         </div>
       </div>
 
-      <div className="card" style={{ padding: 0 }}>
+      <div className="dash-card" style={{ padding: 0 }}>
         {loading ? (
-          <p style={{ padding: 18, color: 'var(--fg-2)' }}>Loading…</p>
+          <PageLoading label="Loading notifications…" />
         ) : filtered.length === 0 ? (
-          <p style={{ padding: 18, color: 'var(--fg-2)' }}>No notifications.</p>
+          <PageEmpty
+            icon={<DI.Bell />}
+            title="No notifications"
+            description="Copilot and workspace events will show up here."
+          />
         ) : filtered.map((n, i) => (
           <div
             key={n.id}

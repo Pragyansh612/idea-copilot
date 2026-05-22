@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CategoryAPI, IdeaAPI, type Category, type Idea } from '@/lib/api/idea'
+import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import { ideaScore, matchesStatusFilter, statusBadge, statusLabel, timeAgo } from '@/lib/dashboard/format'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
@@ -18,27 +19,25 @@ export default function MyIdeasPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        setLoading(true)
-        setError(null)
-        const [cats, result] = await Promise.all([
-          CategoryAPI.getCategories(),
-          IdeaAPI.getIdeas({ limit: 100, sort_by: 'updated_at', sort_order: 'desc' }),
-        ])
-        if (cancelled) return
-        setCategories(cats)
-        setIdeas(result.ideas)
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Failed to load ideas')
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
+  async function load() {
+    try {
+      setLoading(true)
+      setError(null)
+      const [cats, result] = await Promise.all([
+        CategoryAPI.getCategories(),
+        IdeaAPI.getIdeas({ limit: 100, sort_by: 'updated_at', sort_order: 'desc' }),
+      ])
+      setCategories(cats)
+      setIdeas(result.ideas)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load ideas')
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
     load()
-    return () => { cancelled = true }
   }, [])
 
   const categoryOptions = [
@@ -65,10 +64,10 @@ export default function MyIdeasPage() {
         </div>
       </div>
 
-      {error && (
-        <div className="card" style={{ marginBottom: 16, color: 'var(--warn)' }}>{error}</div>
-      )}
+      {error && <PageError message={error} onRetry={load} />}
 
+      {!error && (
+      <>
       <div className="ideas-filterbar">
         <div className="seg">
           <button className={view === 'grid' ? 'on' : ''} onClick={() => setView('grid')}><DI.Grid/> Grid</button>
@@ -85,13 +84,18 @@ export default function MyIdeasPage() {
       </div>
 
       {loading ? (
-        <div className="empty"><p style={{ color: 'var(--fg-2)' }}>Loading ideas…</p></div>
+        <PageLoading label="Loading ideas…" />
       ) : list.length === 0 ? (
-        <div className="empty">
-          <div className="em-icon"><DI.Bulb/></div>
-          <h3>No ideas match this filter</h3>
-          <p>Try widening your filter, or capture a new spark via Copilot.</p>
-        </div>
+        <PageEmpty
+          icon={<DI.Bulb />}
+          title={ideas.length === 0 ? 'No ideas yet' : 'No ideas match this filter'}
+          description={ideas.length === 0 ? 'Capture your first spark or refine one with Copilot.' : 'Try widening your filter or create a new idea.'}
+          action={
+            <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
+              <DI.Plus /> New idea
+            </button>
+          }
+        />
       ) : view === 'grid' ? (
         <div className="ideas-grid">
           {list.map(i => {
@@ -133,6 +137,8 @@ export default function MyIdeasPage() {
             ))}
           </div>
         </div>
+      )}
+      </>
       )}
     </div>
   )

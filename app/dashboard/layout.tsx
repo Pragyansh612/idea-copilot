@@ -16,26 +16,26 @@ import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
 const ROUTES = [
-  { id: 'home',     label: 'Dashboard',               icon: <DI.Home/>,   section: 'Workspace',     href: '/dashboard', countKey: null as string | null },
-  { id: 'ideas',    label: 'My Ideas',                icon: <DI.Bulb/>,   section: 'Workspace',     href: '/dashboard/ideas', countKey: 'ideas' },
-  { id: 'copilot',  label: 'AI Copilot',              icon: <DI.Spark/>,  section: 'Intelligence',  href: '/dashboard/copilot', countKey: null },
-  { id: 'comp',     label: 'Competitor Intelligence', icon: <DI.Radar/>,  section: 'Intelligence',  href: '/dashboard/competitors', countKey: null },
-  { id: 'gaps',     label: 'Market Gaps',             icon: <DI.Target/>, section: 'Intelligence',  href: '/dashboard/gaps', countKey: null },
-  { id: 'roadmaps', label: 'Roadmaps',                icon: <DI.Route/>,  section: 'Intelligence',  href: '/dashboard/roadmaps', countKey: null },
-  { id: 'notifs',   label: 'Notifications',           icon: <DI.Bell/>,   section: 'Account',       href: '/dashboard/notifications', countKey: 'notifs' },
-  { id: 'exports',  label: 'Exports',                 icon: <DI.Export/>, section: 'Account',       href: '/dashboard/exports', countKey: null },
-  { id: 'settings', label: 'Settings',                icon: <DI.Cog/>,    section: 'Account',       href: '/dashboard/settings', countKey: null },
-]
+  { id: 'home',     label: 'Dashboard',     icon: <DI.Home/>,   section: 'Workspace',     href: routes.dashboard, countKey: null as string | null },
+  { id: 'ideas',    label: 'My Ideas',      icon: <DI.Bulb/>,   section: 'Workspace',     href: routes.ideas, countKey: 'ideas' },
+  { id: 'roadmaps', label: 'Roadmaps',      icon: <DI.Route/>,  section: 'Workspace',     href: routes.roadmaps, countKey: null },
+  { id: 'comp',     label: 'Competitors',   icon: <DI.Radar/>,  section: 'Intelligence',  href: routes.competitors, countKey: null },
+  { id: 'gaps',     label: 'Market Gaps',   icon: <DI.Target/>, section: 'Intelligence',  href: routes.gaps, countKey: null },
+  { id: 'copilot',  label: 'Copilot',       icon: <DI.Spark/>,  section: 'AI',            href: routes.copilot, countKey: null },
+  { id: 'notifs',   label: 'Notifications', icon: <DI.Bell/>,   section: 'Account',       href: routes.notifications, countKey: 'notifs' },
+  { id: 'settings', label: 'Settings',      icon: <DI.Cog/>,    section: 'Account',       href: routes.settings, countKey: null },
+] as const
 
-function getActiveId(pathname: string) {
-  if (pathname === '/dashboard') return 'home'
+const NAV_SECTIONS = ['Workspace', 'Intelligence', 'AI', 'Account'] as const
+
+function getActiveId(pathname: string): string {
+  if (pathname === routes.dashboard) return 'home'
   if (pathname.startsWith('/dashboard/ideas')) return 'ideas'
-  if (pathname.startsWith('/dashboard/copilot')) return 'copilot'
+  if (pathname === routes.roadmaps || pathname.startsWith(`${routes.roadmaps}/`)) return 'roadmaps'
   if (pathname.startsWith('/dashboard/competitors')) return 'comp'
   if (pathname.startsWith('/dashboard/gaps')) return 'gaps'
-  if (pathname.startsWith('/dashboard/roadmaps')) return 'roadmaps'
+  if (pathname.startsWith('/dashboard/copilot')) return 'copilot'
   if (pathname.startsWith('/dashboard/notifications')) return 'notifs'
-  if (pathname.startsWith('/dashboard/exports')) return 'exports'
   if (pathname.startsWith('/dashboard/settings')) return 'settings'
   return 'home'
 }
@@ -49,7 +49,14 @@ function getCrumbs(pathname: string, ideaDetailTitle: string | null): string[] {
     const label = ideaDetailTitle || (isUuid(id) ? 'Idea' : id)
     return ['My Ideas', label]
   }
-  const r = ROUTES.find(r => r.href === pathname)
+  if (pathname === routes.roadmaps) return ['Roadmaps']
+  if (pathname === routes.competitors) return ['Competitors']
+  if (pathname === routes.gaps) return ['Market Gaps']
+  if (pathname === routes.copilot) return ['Copilot']
+  if (pathname === routes.notifications) return ['Notifications']
+  if (pathname === routes.settings) return ['Settings']
+  if (pathname === routes.exports) return ['Exports']
+  const r = ROUTES.find(item => item.href === pathname)
   return r ? [r.label] : ['Dashboard']
 }
 
@@ -103,7 +110,6 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   }, [pathname])
 
   const name = displayName(accountEmail || profile?.email, profile?.display_name)
-  const sections = ['Workspace', 'Intelligence', 'Account']
 
   function routeCount(key: string | null) {
     if (!key) return undefined
@@ -123,7 +129,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         </Link>
 
         <div className="sb-nav">
-          {sections.map(sec => (
+          {NAV_SECTIONS.map(sec => (
             <div key={sec}>
               <div className="sb-section">{sec}</div>
               {ROUTES.filter(r => r.section === sec).map(r => (

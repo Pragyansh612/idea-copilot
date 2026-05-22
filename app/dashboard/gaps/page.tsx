@@ -1,6 +1,8 @@
 'use client'
-import { useEffect, useState } from 'react'
+
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import { IdeaAPI, type Idea } from '@/lib/api/idea'
 import { routes } from '@/lib/routes'
 import { normalizeGaps, type GapItem } from '@/lib/dashboard/gaps'
@@ -15,14 +17,22 @@ export default function GapsPage() {
   const [analyzing, setAnalyzing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const loadIdeas = useCallback(async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const r = await IdeaAPI.getIdeas({ limit: 50, sort_by: 'updated_at', sort_order: 'desc' })
+      setIdeas(r.ideas)
+      setSelectedIdeaId(prev => prev || r.ideas[0]?.id || '')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load ideas')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
-    IdeaAPI.getIdeas({ limit: 50 })
-      .then(r => {
-        setIdeas(r.ideas)
-        if (r.ideas[0]) setSelectedIdeaId(r.ideas[0].id)
-      })
-      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load ideas'))
-      .finally(() => setLoading(false))
+    loadIdeas()
   }, [])
 
   async function runAnalysis() {
@@ -52,42 +62,61 @@ export default function GapsPage() {
             <select
               value={selectedIdeaId}
               onChange={e => setSelectedIdeaId(e.target.value)}
-              style={{ fontSize: 13, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--bg-2)', color: 'var(--fg)', marginRight: 8 }}
+              className="dash-select"
+              style={{ marginRight: 8 }}
+              aria-label="Select idea"
             >
-              {ideas.map(i => <option key={i.id} value={i.id}>{i.title}</option>)}
+              {ideas.map(i => (
+                <option key={i.id} value={i.id}>{i.title}</option>
+              ))}
             </select>
           )}
-          <button className="btn-sm solid" onClick={runAnalysis} disabled={!selectedIdeaId || analyzing}>
-            <DI.Spark/> {analyzing ? 'Analyzing…' : 'Generate fresh'}
+          <button type="button" className="btn-sm solid" onClick={runAnalysis} disabled={!selectedIdeaId || analyzing}>
+            <DI.Spark /> {analyzing ? 'Analyzing…' : 'Run analysis'}
           </button>
         </div>
       </div>
 
-      {error && <div className="card" style={{ marginBottom: 16, color: 'var(--warn)' }}>{error}</div>}
+      {error && <PageError message={error} onRetry={loadIdeas} />}
 
-      {loading ? (
-        <p style={{ color: 'var(--fg-2)' }}>Loading ideas…</p>
-      ) : ideas.length === 0 ? (
-        <div className="empty">
-          <h3>Add an idea first</h3>
-          <p>Market gap analysis runs per idea.</p>
-          <button className="btn-sm solid" onClick={() => router.push(routes.ideas)}><DI.Bulb/> Go to My Ideas</button>
-        </div>
-      ) : gaps.length === 0 ? (
-        <div className="empty">
-          <h3>No gaps loaded yet</h3>
-          <p>Select an idea and run analysis to detect market gaps.</p>
-        </div>
-      ) : (
+      {loading && !error && <PageLoading label="Loading ideas…" />}
+      {!loading && !error && ideas.length === 0 && (
+        <PageEmpty
+          icon={<DI.Target />}
+          title="Add an idea first"
+          description="Market gap analysis runs per idea."
+          action={
+            <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
+              <DI.Plus /> New idea
+            </button>
+          }
+        />
+      )}
+      {!loading && !error && ideas.length > 0 && gaps.length === 0 && !analyzing && (
+        <PageEmpty
+          icon={<DI.Target />}
+          title="No gaps loaded yet"
+          description="Select an idea and run analysis to detect market gaps."
+          action={
+            <button type="button" className="btn-sm solid" onClick={runAnalysis} disabled={!selectedIdeaId}>
+              <DI.Spark /> Run analysis
+            </button>
+          }
+        />
+      )}
+      {!loading && !error && analyzing && <PageLoading label="Running market gap analysis…" />}
+      {!loading && !error && gaps.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {gaps.map((g, i) => (
-            <div key={i} className="card">
+            <div key={i} className="dash-card">
               <div className="eyebrow-mono" style={{ marginBottom: 8 }}>
                 #{String(i + 1).padStart(2, '0')}
                 {g.confidence_score != null && ` · ${Math.round(g.confidence_score)}% conf`}
               </div>
               <h3 style={{ marginBottom: 8 }}>{g.title || g.opportunity || 'Market opportunity'}</h3>
-              <p style={{ color: 'var(--fg-2)', fontSize: 14, lineHeight: 1.55 }}>{g.description || String(g)}</p>
+              <p style={{ color: 'var(--fg-2)', fontSize: 14, lineHeight: 1.55, margin: 0 }}>
+                {g.description || String(g)}
+              </p>
             </div>
           ))}
         </div>
