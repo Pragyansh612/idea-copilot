@@ -6,7 +6,7 @@ const productLinks = [
   { label: 'Copilot', href: routes.copilot },
   { label: 'Competitor radar', href: routes.competitors },
   { label: 'Roadmap planner', href: routes.roadmaps },
-  { label: 'Pricing', href: routes.pricing },
+  // { label: 'Pricing', href: routes.pricing },
 ]
 
 const resourceLinks = [

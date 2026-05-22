@@ -1,4 +1,5 @@
 import { TokenManager } from '@/lib/auth/tokens'
+import { routes } from '@/lib/routes'
 
 function parseApiError(payload: unknown): string {
   if (!payload || typeof payload !== 'object') return 'Request failed'
@@ -23,6 +24,13 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}) {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}))
+    if (response.status === 401 && typeof window !== 'undefined') {
+      TokenManager.clearTokens()
+      const path = window.location.pathname
+      if (path.startsWith('/dashboard')) {
+        window.location.href = `${routes.login}?redirect=${encodeURIComponent(path)}`
+      }
+    }
     throw new Error(parseApiError(error))
   }
 

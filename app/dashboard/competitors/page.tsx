@@ -63,7 +63,7 @@ export default function CompetitorsPage() {
         <div className="ci-panel">
           <div className="ci-panel-head">
             <span>Competitor table · {competitors.length} found</span>
-            <span className="live">API · {process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}</span>
+            <span className="live">live data</span>
           </div>
           {loading ? (
             <p style={{ padding: 16, color: 'var(--fg-2)' }}>Loading…</p>

@@ -200,12 +200,11 @@ export interface Idea {
   updated_at: string;
 }
 
+/** Matches backend IdeaDetailResponse in API `data`. */
 export interface IdeaDetailResponse {
-  idea: {
-    idea: Idea;
-    phases: Phase[];
-    features: Feature[];
-  };
+  idea: Idea;
+  phases: Phase[];
+  features: Feature[];
 }
 
 export interface IdeaDetail {

@@ -16,7 +16,7 @@ export default function Nav() {
         <a href={routes.workflow}>Workflow</a>
         <a href={routes.intel}>Intelligence</a>
         <a href={routes.copilotSection}>Copilot</a>
-        <a href={routes.pricing}>Pricing</a>
+        {/* <a href={routes.pricing}>Pricing</a> */}
       </div>
       <span className="nav-sep" />
       <button

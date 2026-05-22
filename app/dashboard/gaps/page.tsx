@@ -3,16 +3,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { IdeaAPI, type Idea } from '@/lib/api/idea'
 import { routes } from '@/lib/routes'
+import { normalizeGaps, type GapItem } from '@/lib/dashboard/gaps'
 import * as DI from '@/components/dashboard/Icons'
-
-type GapItem = {
-  title?: string
-  description?: string
-  confidence_score?: number
-  opportunity?: string
-  urgency?: string
-  tam?: string
-}
 
 export default function GapsPage() {
   const router = useRouter()
@@ -39,8 +31,7 @@ export default function GapsPage() {
       setAnalyzing(true)
       setError(null)
       const result = await IdeaAPI.marketGapAnalysis(selectedIdeaId)
-      const list = Array.isArray(result) ? result : (result as { gaps?: GapItem[] })?.gaps ?? []
-      setGaps(list as GapItem[])
+      setGaps(normalizeGaps(result))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Market gap analysis failed')
     } finally {

@@ -214,10 +214,6 @@ function LoginForm() {
           </button>
         </form>
 
-        <div style={{ marginTop: 20, textAlign: 'center', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-3)' }}>
-          API · {process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}
-        </div>
-
         <div style={{ marginTop: 20, textAlign: 'center', fontSize: 13, color: 'var(--fg-2)' }}>
           No account? <Link href={routes.signup} style={{ color: 'var(--accent)' }}>Create one free</Link>
         </div>

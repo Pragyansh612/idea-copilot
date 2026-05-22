@@ -127,7 +127,7 @@ export default function CopilotPage() {
             <div className="ai-orb"/>
             <div className="cp-title">
               <span className="t1">{contextIdea?.title ?? 'Workspace Copilot'}</span>
-              <span className="t2">backend · {process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}</span>
+              <span className="t2">Workspace context{contextIdea ? '' : ' · all ideas'}</span>
             </div>
             {ideas.length > 0 && (
               <select

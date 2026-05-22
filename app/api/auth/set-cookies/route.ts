@@ -16,21 +16,22 @@ export async function POST(request: Request) {
     // Get cookies store
     const cookieStore = await cookies();
 
-    // Set access token cookie (7 days)
+    const isProd = process.env.NODE_ENV === 'production';
+
+    // Middleware reads access_token; client also keeps tokens in localStorage for API calls.
     cookieStore.set('access_token', access_token, {
-      httpOnly: false, // Allow client-side access if needed
-      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      secure: isProd,
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 7, // 7 days
+      maxAge: 60 * 60 * 24 * 7,
       path: '/',
     });
 
-    // Set refresh token cookie (30 days)
     cookieStore.set('refresh_token', refresh_token, {
-      httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
+      httpOnly: true,
+      secure: isProd,
       sameSite: 'lax',
-      maxAge: 60 * 60 * 24 * 30, // 30 days
+      maxAge: 60 * 60 * 24 * 30,
       path: '/',
     });
 

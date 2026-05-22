@@ -8,7 +8,7 @@ import CopilotSection from '@/components/CopilotSection'
 import MockupsSection from '@/components/MockupsSection'
 import WhySection from '@/components/WhySection'
 import TestimonialsSection from '@/components/TestimonialsSection'
-import PricingSection from '@/components/PricingSection'
+// import PricingSection from '@/components/PricingSection' // hidden — free for now
 import FinalCTA from '@/components/FinalCTA'
 import Footer from '@/components/Footer'
 
@@ -25,7 +25,7 @@ export default function Home() {
       <MockupsSection />
       <WhySection />
       <TestimonialsSection />
-      <PricingSection />
+      {/* <PricingSection /> */}
       <FinalCTA />
       <Footer />
     </>

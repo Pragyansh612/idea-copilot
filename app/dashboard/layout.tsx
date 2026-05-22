@@ -1,11 +1,14 @@
 'use client'
 import './dashboard.css'
+import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { useTheme } from '@/hooks/useTheme'
 import { useAuth } from '@/hooks/useAuth'
+import { TokenManager } from '@/lib/auth/tokens'
 import { IdeaAPI } from '@/lib/api/idea'
 import { NotificationAPI } from '@/lib/api/notification'
+import { AuthAPI } from '@/lib/api/auth'
 import { UserAPI, type UserProfile } from '@/lib/api/user'
 import { displayName } from '@/lib/dashboard/format'
 import { routes } from '@/lib/routes'
@@ -57,8 +60,20 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const crumbs = getCrumbs(pathname)
   const contentRef = useRef<HTMLDivElement>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [accountEmail, setAccountEmail] = useState<string>('')
   const [ideaCount, setIdeaCount] = useState(0)
   const [unreadCount, setUnreadCount] = useState(0)
+
+  useEffect(() => {
+    document.body.classList.add('app-body')
+    return () => document.body.classList.remove('app-body')
+  }, [])
+
+  useEffect(() => {
+    if (!TokenManager.isAuthenticated()) {
+      router.replace(`${routes.login}?redirect=${encodeURIComponent(pathname)}`)
+    }
+  }, [pathname, router])
 
   useEffect(() => {
     contentRef.current?.scrollTo(0, 0)
@@ -68,13 +83,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     let cancelled = false
     async function loadNavMeta() {
       try {
-        const [prof, ideas, notifs] = await Promise.all([
+        const [prof, ideas, notifs, me] = await Promise.all([
           UserAPI.getProfile(),
           IdeaAPI.getIdeas({ limit: 1 }),
           NotificationAPI.getNotifications(true),
+          AuthAPI.getMe().catch(() => null),
         ])
         if (cancelled) return
         setProfile(prof)
+        setAccountEmail(me?.email ?? prof.email ?? '')
         setIdeaCount(ideas.total)
         setUnreadCount(notifs.unread_count)
       } catch {
@@ -89,7 +106,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return () => { cancelled = true }
   }, [pathname])
 
-  const name = displayName(profile?.email, profile?.display_name)
+  const name = displayName(accountEmail || profile?.email, profile?.display_name)
   const sections = ['Workspace', 'Intelligence', 'Account']
 
   function routeCount(key: string | null) {
@@ -103,11 +120,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="app">
       {/* Sidebar */}
       <aside className="sb">
-        <div className="sb-brand">
+        <Link href={routes.dashboard} className="sb-brand" style={{ textDecoration: 'none', color: 'inherit' }}>
           <span className="mark" />
           <span>IdeaCopilot</span>
           <span className="sb-ind">live</span>
-        </div>
+        </Link>
 
         <div className="sb-nav">
           {sections.map(sec => (
@@ -129,27 +146,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         <div className="sb-foot">
-          <div className="sb-upgrade">
-            <div className="ub-title">Upgrade to <em>Founder</em></div>
-            <div className="ub-desc">Unlimited Copilot calls, live competitor pull, priority models.</div>
-            <button type="button" className="ub-cta" style={{ cursor: 'pointer', border: 0, background: 'none', font: 'inherit', padding: 0, color: 'inherit' }} onClick={() => router.push(routes.settings)}>Upgrade plan <DI.Arrow/></button>
-          </div>
-          <div className="sb-ws" onClick={() => router.push(routes.settings)} style={{ cursor: 'pointer' }} role="button" tabIndex={0} onKeyDown={e => e.key === 'Enter' && router.push(routes.settings)}>
+          {/* Pricing / upgrade hidden while everything is free */}
+          <button
+            type="button"
+            className="sb-account"
+            onClick={() => router.push(routes.settings)}
+            aria-label="Account settings"
+          >
             <div className="ws-icon">{name.slice(0, 2).toUpperCase()}</div>
             <div className="ws-meta">
-              <div className="ws-name">{name}&apos;s Lab</div>
-              <div className="ws-plan">{ideaCount} idea{ideaCount === 1 ? '' : 's'}</div>
+              <div className="ws-name">{name}</div>
+              <div className="ws-hint">Account & settings</div>
             </div>
             <span className="ws-caret"><DI.Caret/></span>
-          </div>
-          <div className="sb-user" onClick={logout} title="Click to sign out">
-            <div className="av" />
-            <div className="who">
-              <div className="name">{name}</div>
-              <div className="role">founder · solo</div>
-            </div>
-            <span className="menu"><DI.Dots/></span>
-          </div>
+          </button>
+          <button type="button" className="sb-signout" onClick={logout}>
+            Sign out
+          </button>
         </div>
       </aside>
 
@@ -158,9 +171,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         {/* Topbar */}
         <div className="tb">
           <div className="tb-crumbs">
-            <a href="/" style={{ color: 'var(--fg-3)' }}>Site</a>
+            <Link href={routes.dashboard} style={{ color: 'var(--fg-3)' }}>Dashboard</Link>
             <span className="sep">/</span>
-            <span>{name}&apos;s Lab</span>
+            <span>{name}</span>
             {crumbs.map((c, i) => (
               <span key={i}>
                 <span className="sep">/</span>
@@ -169,10 +182,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             ))}
           </div>
 
-          <div className="tb-search">
+          <div className="tb-search" title="Search coming soon">
             <DI.Search />
-            <input placeholder="Search ideas, competitors, the workspace…" />
-            <span className="kbd">⌘ K</span>
+            <input placeholder="Search (coming soon)" disabled aria-disabled="true" />
           </div>
 
           <div className="tb-actions">

@@ -35,8 +35,7 @@ export default function IdeaDetailPage() {
       try {
         setLoading(true)
         setError(null)
-        const result = await IdeaAPI.getIdea(ideaId)
-        const detail = result.idea
+        const detail = await IdeaAPI.getIdea(ideaId)
         const [sugs, comp] = await Promise.all([
           AIAPI.getSuggestions(ideaId).catch(() => []),
           CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] })),
@@ -239,7 +238,7 @@ export default function IdeaDetailPage() {
           <div className="id-right-card">
             <div className="r-head"><DI.Spark/> Live from API</div>
             <p style={{ fontSize: 13, color: 'var(--fg)', lineHeight: 1.55 }}>
-              This page loads idea, features, phases, AI suggestions, and competitors from {process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}.
+              Features, phases, AI suggestions, and competitors load from your workspace API.
             </p>
           </div>
         </div>

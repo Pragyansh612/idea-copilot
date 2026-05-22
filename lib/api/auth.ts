@@ -1,4 +1,13 @@
+import { fetchWithAuth } from './http';
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+
+export interface AuthUser {
+  id: string;
+  email?: string;
+  phone?: string;
+  role?: string;
+}
 
 export interface SignupData {
   email: string;
@@ -95,6 +104,11 @@ export class AuthAPI {
     }
 
     return response.json();
+  }
+
+  static async getMe(): Promise<AuthUser> {
+    const result = await fetchWithAuth(`${API_URL}/api/auth/me`);
+    return result.data.user;
   }
 
   static async logout(accessToken: string): Promise<void> {

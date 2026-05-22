@@ -4,7 +4,8 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface UserProfile {
   id: string;
-  email: string;
+  email?: string;
+  username?: string;
   display_name?: string;
   avatar_url?: string;
   bio?: string;

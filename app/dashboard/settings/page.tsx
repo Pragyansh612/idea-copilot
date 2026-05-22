@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { AuthAPI } from '@/lib/api/auth'
 import { UserAPI, type UserProfile } from '@/lib/api/user'
 import { displayName } from '@/lib/dashboard/format'
 import * as DI from '@/components/dashboard/Icons'
@@ -44,12 +45,13 @@ const sections = [
   { id: 'workspace', label: 'Workspace',       icon: <DI.Folder/> },
   { id: 'ai',        label: 'AI preferences', icon: <DI.Sparkles/> },
   { id: 'notifs',    label: 'Notifications',  icon: <DI.Bell/> },
-  { id: 'billing',   label: 'Plan & billing', icon: <DI.Bolt/> },
+  // { id: 'billing',   label: 'Plan & billing', icon: <DI.Bolt/> }, // hidden — free for now
 ]
 
 export default function SettingsPage() {
   const [section, setSection] = useState('account')
   const [profile, setProfile] = useState<UserProfile | null>(null)
+  const [accountEmail, setAccountEmail] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reasoning, setReasoning] = useState(true)
@@ -57,14 +59,16 @@ export default function SettingsPage() {
   const [refresh, setRefresh] = useState(false)
 
   useEffect(() => {
-    UserAPI.getProfile()
-      .then(setProfile)
+    Promise.all([UserAPI.getProfile(), AuthAPI.getMe().catch(() => null)])
+      .then(([prof, me]) => {
+        setProfile(prof)
+        setAccountEmail(me?.email ?? prof.email ?? '')
+      })
       .catch(err => setError(err instanceof Error ? err.message : 'Failed to load profile'))
       .finally(() => setLoading(false))
   }, [])
 
   const name = displayName(profile?.email, profile?.display_name)
-  const workspace = `${name}'s Lab`
 
   return (
     <div className="page page-narrow">
@@ -81,7 +85,7 @@ export default function SettingsPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 20, alignItems: 'flex-start' }}>
         <div className="card" style={{ padding: 10 }}>
           {sections.map(s => (
-            <button key={s.id} className={`sb-item ${section === s.id ? 'active' : ''}`} onClick={() => setSection(s.id)}>
+            <button key={s.id} className={`settings-nav-item ${section === s.id ? 'active' : ''}`} onClick={() => setSection(s.id)}>
               {s.icon}<span>{s.label}</span>
             </button>
           ))}
@@ -96,18 +100,18 @@ export default function SettingsPage() {
                 <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'linear-gradient(135deg,#e4a89c,#a36b58)' }}/>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 15, color: 'var(--fg)' }}>{name}</div>
-                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-3)', marginTop: 2 }}>{profile?.email ?? '—'}</div>
+                  <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-3)', marginTop: 2 }}>{accountEmail || '—'}</div>
                 </div>
               </div>
               <Field label="Display name"><input style={inp} readOnly value={profile?.display_name ?? name}/></Field>
-              <Field label="Email"><input style={inp} readOnly value={profile?.email ?? ''}/></Field>
+              <Field label="Email"><input style={inp} readOnly value={accountEmail}/></Field>
               <Field label="Bio"><input style={inp} readOnly value={profile?.bio ?? ''} placeholder="Not set"/></Field>
               <Field label="Location"><input style={inp} readOnly value={profile?.location ?? ''} placeholder="Not set"/></Field>
             </SetCard>
           ) : section === 'workspace' ? (
-            <SetCard title="Workspace" desc="Branding defaults for your lab.">
-              <Field label="Workspace name"><input style={inp} readOnly value={workspace}/></Field>
-              <Field label="Member"><input style={inp} readOnly value={name}/></Field>
+            <SetCard title="Workspace" desc="Your personal IdeaCopilot workspace.">
+              <Field label="Display name"><input style={inp} readOnly value={profile?.display_name ?? name}/></Field>
+              <Field label="Username"><input style={inp} readOnly value={profile?.username ?? '—'} placeholder="Not set"/></Field>
             </SetCard>
           ) : section === 'ai' ? (
             <SetCard title="AI behavior" desc="UI preferences (not persisted to API yet).">
@@ -119,11 +123,7 @@ export default function SettingsPage() {
             <SetCard title="Notifications" desc="Manage alerts in Notifications page.">
               <p style={{ fontSize: 13, color: 'var(--fg-2)' }}>Notification delivery uses the backend notification service.</p>
             </SetCard>
-          ) : (
-            <SetCard title="Plan" desc="Billing is not connected in this UI yet.">
-              <p style={{ fontSize: 13, color: 'var(--fg-2)' }}>Upgrade flows are placeholder only.</p>
-            </SetCard>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
