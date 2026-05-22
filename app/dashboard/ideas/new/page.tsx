@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { IdeaAPI, type PriorityEnum } from '@/lib/api/idea'
+import { draftFromForm, saveIdeaDraft } from '@/lib/copilot/idea-draft'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
@@ -92,7 +93,15 @@ export default function NewIdeaPage() {
           <button type="submit" className="btn-sm solid" disabled={saving}>
             {saving ? 'Saving…' : 'Create idea'}
           </button>
-          <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.copilot)} disabled={saving}>
+          <button
+            type="button"
+            className="btn-sm ghost"
+            disabled={saving}
+            onClick={() => {
+              saveIdeaDraft(draftFromForm({ title, description, priority, tags }))
+              router.push(routes.copilotWithDraft)
+            }}
+          >
             <DI.Spark/> Refine with Copilot
           </button>
         </div>

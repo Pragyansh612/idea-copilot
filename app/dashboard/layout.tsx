@@ -4,6 +4,8 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import ThemeToggle from '@/components/ThemeToggle'
+import { DashboardChromeProvider, useDashboardChrome } from '@/components/dashboard/DashboardChromeContext'
+import { isUuid } from '@/lib/dashboard/format'
 import { useAuth } from '@/hooks/useAuth'
 import { IdeaAPI } from '@/lib/api/idea'
 import { NotificationAPI } from '@/lib/api/notification'
@@ -38,24 +40,26 @@ function getActiveId(pathname: string) {
   return 'home'
 }
 
-function getCrumbs(pathname: string): string[] {
+function getCrumbs(pathname: string, ideaDetailTitle: string | null): string[] {
   if (pathname === '/dashboard') return ['Dashboard']
   if (pathname === routes.newIdea) return ['My Ideas', 'New idea']
   if (pathname.startsWith('/dashboard/ideas/')) {
-    const id = decodeURIComponent(pathname.split('/dashboard/ideas/')[1])
+    const id = decodeURIComponent(pathname.split('/dashboard/ideas/')[1]?.split('?')[0] || '')
     if (id === 'new') return ['My Ideas', 'New idea']
-    return ['My Ideas', id]
+    const label = ideaDetailTitle || (isUuid(id) ? 'Idea' : id)
+    return ['My Ideas', label]
   }
   const r = ROUTES.find(r => r.href === pathname)
   return r ? [r.label] : ['Dashboard']
 }
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+function DashboardShell({ children }: { children: React.ReactNode }) {
   const { logout } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
+  const { ideaDetailTitle } = useDashboardChrome()
   const activeId = getActiveId(pathname)
-  const crumbs = getCrumbs(pathname)
+  const crumbs = getCrumbs(pathname, ideaDetailTitle)
   const contentRef = useRef<HTMLDivElement>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [accountEmail, setAccountEmail] = useState<string>('')
@@ -197,5 +201,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </div>
     </div>
+  )
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <DashboardChromeProvider>
+      <DashboardShell>{children}</DashboardShell>
+    </DashboardChromeProvider>
   )
 }

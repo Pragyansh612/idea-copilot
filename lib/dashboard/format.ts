@@ -1,7 +1,20 @@
 import type { Idea, PriorityEnum, StatusEnum } from '@/lib/api/idea';
 
+/** Parse API/Supabase timestamps (space-separated or ISO). */
+export function parseApiDate(dateString: string | null | undefined): Date | null {
+  if (!dateString) return null;
+  let s = dateString.trim();
+  if (!s.includes('T')) s = s.replace(' ', 'T');
+  if (/\+\d{2}$/.test(s)) s = `${s}:00`;
+  if (s.endsWith('+00:00')) s = s.replace('+00:00', 'Z');
+  const d = new Date(s);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export function timeAgo(dateString: string): string {
-  const diff = Date.now() - new Date(dateString).getTime();
+  const d = parseApiDate(dateString);
+  if (!d) return '—';
+  const diff = Date.now() - d.getTime();
   const mins = Math.floor(diff / 60000);
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m ago`;
@@ -15,7 +28,9 @@ export function timeAgo(dateString: string): string {
 }
 
 export function formatDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('en-US', {
+  const d = parseApiDate(dateString);
+  if (!d) return '—';
+  return d.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -51,7 +66,14 @@ export function priorityShort(priority: PriorityEnum): string {
 }
 
 export function ideaScore(idea: Idea): number {
-  return Math.round(idea.overall_score ?? idea.progress_percentage ?? 0);
+  const score = idea.overall_score ?? idea.progress_percentage ?? 0;
+  return Math.round(Number(score) || 0);
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID_RE.test(value);
 }
 
 export function matchesStatusFilter(idea: Idea, filter: string): boolean {

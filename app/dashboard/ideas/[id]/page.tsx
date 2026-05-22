@@ -12,6 +12,7 @@ import {
   type Phase,
 } from '@/lib/api/idea'
 import { formatDate, ideaScore, priorityShort, statusLabel, timeAgo } from '@/lib/dashboard/format'
+import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
@@ -27,6 +28,11 @@ export default function IdeaDetailPage() {
   const [competitors, setCompetitors] = useState<Array<Record<string, unknown>>>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { setIdeaDetailTitle } = useDashboardChrome()
+
+  useEffect(() => {
+    return () => setIdeaDetailTitle(null)
+  }, [setIdeaDetailTitle])
 
   useEffect(() => {
     if (!ideaId) return
@@ -42,6 +48,7 @@ export default function IdeaDetailPage() {
         ])
         if (cancelled) return
         setIdea(detail.idea)
+        setIdeaDetailTitle(detail.idea.title)
         setFeatures(detail.features || [])
         setPhases(detail.phases || [])
         setSuggestions(sugs)
@@ -93,7 +100,7 @@ export default function IdeaDetailPage() {
           <button className="btn-sm ghost" onClick={() => router.push(routes.ideas)}>
             <DI.CaretRight style={{ transform: 'rotate(180deg)' }}/> Back
           </button>
-          <button className="btn-sm solid" onClick={() => router.push(routes.copilot)}>
+          <button className="btn-sm solid" onClick={() => router.push(routes.copilotForIdea(ideaId))}>
             <DI.Spark/> Ask Copilot
           </button>
         </div>
@@ -110,8 +117,8 @@ export default function IdeaDetailPage() {
               <div className="bar"><div className="fill" style={{ width: `${score}%` }}/></div>
             </div>
             <div className="id-scorebar">
-              <div className="label"><span>Progress</span><span>{idea.progress_percentage}%</span></div>
-              <div className="bar"><div className="fill" style={{ width: `${idea.progress_percentage}%` }}/></div>
+              <div className="label"><span>Progress</span><span>{idea.progress_percentage ?? 0}%</span></div>
+              <div className="bar"><div className="fill" style={{ width: `${idea.progress_percentage ?? 0}%` }}/></div>
             </div>
           </div>
 

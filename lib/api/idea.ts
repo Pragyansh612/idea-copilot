@@ -406,6 +406,23 @@ export class CategoryAPI {
   }
 }
 
+/** Unwrap legacy nested `{ idea: { idea, phases, features } }` from older API responses. */
+export function normalizeIdeaDetail(data: Record<string, unknown>): IdeaDetailResponse {
+  const nested = data.idea as Record<string, unknown> | undefined
+  if (nested && nested.idea && typeof nested.idea === 'object') {
+    return {
+      idea: nested.idea as Idea,
+      phases: (nested.phases as Phase[]) ?? [],
+      features: (nested.features as Feature[]) ?? [],
+    }
+  }
+  return {
+    idea: data.idea as Idea,
+    phases: (data.phases as Phase[]) ?? [],
+    features: (data.features as Feature[]) ?? [],
+  }
+}
+
 // ==================== IDEAS API ====================
 
 export class IdeaAPI {
@@ -426,7 +443,7 @@ export class IdeaAPI {
 
   static async getIdea(ideaId: string): Promise<IdeaDetailResponse> {
     const result = await fetchWithAuth(`${API_URL}/api/ideas/${ideaId}`);
-    return result.data;
+    return normalizeIdeaDetail(result.data);
   }
 
   static async createIdea(data: IdeaCreate): Promise<Idea> {

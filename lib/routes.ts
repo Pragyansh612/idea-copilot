@@ -11,6 +11,8 @@ export const routes = {
   newIdea: '/dashboard/ideas/new',
   idea: (id: string) => `/dashboard/ideas/${id}`,
   copilot: '/dashboard/copilot',
+  copilotWithDraft: '/dashboard/copilot?draft=1',
+  copilotForIdea: (id: string) => `/dashboard/copilot?idea=${id}`,
   competitors: '/dashboard/competitors',
   gaps: '/dashboard/gaps',
   roadmaps: '/dashboard/roadmaps',

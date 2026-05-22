@@ -1748,6 +1748,60 @@ body.app-body {
   .id-left, .id-right { position: static; }
 }
 
+/* Idea draft panel (Copilot + new idea flow) */
+.idea-draft-panel {
+  margin-bottom: 16px;
+  padding: 18px 20px;
+}
+.idea-draft-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.idea-draft-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--fg-2);
+  line-height: 1.5;
+}
+.idea-draft-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.idea-draft-row {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+.idea-draft-row--off input,
+.idea-draft-row--off textarea,
+.idea-draft-row--off select {
+  opacity: 0.45;
+}
+.idea-draft-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-3);
+  padding-top: 10px;
+}
+.idea-draft-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
 /* Next.js body overflow fix for app shell */
 body:has(.app) {
     overflow: hidden;
