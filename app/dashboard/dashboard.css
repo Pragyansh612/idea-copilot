@@ -1496,6 +1496,43 @@ body.app-body {
   border-radius: 10px;
   background: var(--bg-2);
 }
+.dash-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  font-size: 13px;
+  color: var(--fg);
+  max-width: min(420px, calc(100vw - 40px));
+}
+.dash-toast-success { border-color: var(--good); }
+.dash-toast-error { border-color: var(--bad); }
+.dash-toast-icon { display: flex; color: var(--good); }
+.dash-toast-error .dash-toast-icon { color: var(--bad); }
+.dash-toast-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--fg-3);
+  display: flex;
+  padding: 2px;
+}
+.gap-opportunity-chart {
+  width: 100%;
+  max-width: 680px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-2);
+}
 .competitor-nudge {
   border-color: var(--accent-line);
   background: linear-gradient(160deg, var(--accent-soft), transparent 70%) var(--surface);

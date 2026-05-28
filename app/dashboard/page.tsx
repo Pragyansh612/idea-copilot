@@ -7,6 +7,8 @@ import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageSt
 import { displayName, statusBadge, timeAgo } from '@/lib/dashboard/format'
 import { phaseProgress } from '@/lib/dashboard/phase-progress'
 import { routes } from '@/lib/routes'
+import { getGapRunMap, markGapRun, saveGapsForIdea } from '@/lib/dashboard/gap-storage'
+import { normalizeGaps } from '@/lib/dashboard/gaps'
 import * as DI from '@/components/dashboard/Icons'
 
 type NextAction = {
@@ -14,22 +16,6 @@ type NextAction = {
   detail: string
   cta: string
   run: () => void
-}
-
-function getGapRunMap(): Record<string, boolean> {
-  if (typeof window === 'undefined') return {}
-  try {
-    return JSON.parse(localStorage.getItem('ic-gap-runs') || '{}') as Record<string, boolean>
-  } catch {
-    return {}
-  }
-}
-
-function saveGapRun(id: string): void {
-  if (typeof window === 'undefined') return
-  const map = getGapRunMap()
-  map[id] = true
-  localStorage.setItem('ic-gap-runs', JSON.stringify(map))
 }
 
 export default function DashboardHome() {
@@ -41,6 +27,7 @@ export default function DashboardHome() {
   const [recentProgress, setRecentProgress] = useState<Record<string, ReturnType<typeof phaseProgress>>>({})
   const [nextAction, setNextAction] = useState<NextAction | null>(null)
   const [competitorNudge, setCompetitorNudge] = useState<{ id: string; title: string } | null>(null)
+  const [profileName, setProfileName] = useState<string | undefined>()
   const [xp, setXp] = useState(0)
   const [level, setLevel] = useState(1)
 
@@ -48,12 +35,14 @@ export default function DashboardHome() {
     try {
       setLoading(true)
       setError(null)
-      const [me, stats, ideasData] = await Promise.all([
+      const [me, stats, ideasData, profile] = await Promise.all([
         AuthAPI.getMe(),
         import('@/lib/api/user').then(m => m.UserAPI.getStats()).catch(() => null),
         IdeaAPI.getIdeas({ limit: 20, sort_by: 'updated_at', sort_order: 'desc' }),
+        import('@/lib/api/user').then(m => m.UserAPI.getProfile()).catch(() => null),
       ])
       setAuthUser(me)
+      setProfileName(profile?.display_name)
       setIdeas(ideasData.ideas)
       setXp(stats?.total_xp ?? 0)
       setLevel(stats?.current_level ?? 1)
@@ -117,8 +106,9 @@ export default function DashboardHome() {
             detail: `${topIdea.title} has no recent market gap analysis.`,
             cta: 'Run analysis',
             run: async () => {
-              await IdeaAPI.marketGapAnalysis(topIdea.id).catch(() => undefined)
-              saveGapRun(topIdea.id)
+              const result = await IdeaAPI.marketGapAnalysis(topIdea.id).catch(() => null)
+              if (result) saveGapsForIdea(topIdea.id, normalizeGaps(result))
+              else markGapRun(topIdea.id)
               router.push(routes.gaps)
             },
           })
@@ -142,7 +132,7 @@ export default function DashboardHome() {
     load()
   }, [])
 
-  const name = displayName(authUser?.email, undefined)
+  const name = displayName(authUser?.email, profileName)
   const recentIdeas = useMemo(() => ideas.slice(0, 3), [ideas])
 
   return (

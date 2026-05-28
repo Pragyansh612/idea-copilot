@@ -4,6 +4,7 @@ import { AuthAPI } from '@/lib/api/auth'
 import { UserAPI, type UserProfile } from '@/lib/api/user'
 import SettingsApiTokens from '@/components/dashboard/SettingsApiTokens'
 import { PageError, PageLoading } from '@/components/dashboard/PageState'
+import { Toast } from '@/components/dashboard/Toast'
 import { displayName } from '@/lib/dashboard/format'
 import * as DI from '@/components/dashboard/Icons'
 import type { ReactNode } from 'react'
@@ -129,11 +130,7 @@ export default function SettingsPage() {
       </div>
 
       {error && section !== 'tokens' && <PageError message={error} onRetry={loadProfile} />}
-      {saveMessage && (
-        <div className="dash-card" style={{ marginBottom: 14, padding: '10px 14px', color: 'var(--good)', fontSize: 13 }}>
-          {saveMessage}
-        </div>
-      )}
+      {saveMessage && <Toast message={saveMessage} onDismiss={() => setSaveMessage(null)} />}
 
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 20, alignItems: 'flex-start' }}>
         <div className="dash-card" style={{ padding: 10 }}>

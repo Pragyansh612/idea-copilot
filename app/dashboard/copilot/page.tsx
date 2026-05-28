@@ -82,6 +82,8 @@ function CopilotPageInner() {
   useEffect(() => {
     const ideaParam = searchParams.get('idea')
     if (ideaParam) setSelectedIdeaId(ideaParam)
+    const promptParam = searchParams.get('prompt')
+    if (promptParam) setDraft(promptParam)
     if (searchParams.get('draft') === '1') {
       const stored = loadIdeaDraft()
       if (stored) {

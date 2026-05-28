@@ -12,11 +12,12 @@ function parseApiError(payload: unknown): string {
 
 export async function fetchWithAuth(url: string, options: RequestInit = {}) {
   const token = TokenManager.getAccessToken()
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
 
   const response = await fetch(url, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token && { Authorization: `Bearer ${token}` }),
       ...options.headers,
     },

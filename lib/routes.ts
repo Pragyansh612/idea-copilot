@@ -15,6 +15,9 @@ export const routes = {
   copilot: '/dashboard/copilot',
   copilotWithDraft: '/dashboard/copilot?draft=1',
   copilotForIdea: (id: string) => `/dashboard/copilot?idea=${id}`,
+  copilotDiscuss: (ideaId: string, prompt: string) =>
+    `/dashboard/copilot?idea=${encodeURIComponent(ideaId)}&prompt=${encodeURIComponent(prompt)}`,
+  ideaAttachments: (id: string) => `/dashboard/ideas/${id}?tab=attachments`,
   competitors: '/dashboard/competitors',
   competitorsForIdea: (id: string) => `/dashboard/competitors?idea=${id}`,
   gaps: '/dashboard/gaps',

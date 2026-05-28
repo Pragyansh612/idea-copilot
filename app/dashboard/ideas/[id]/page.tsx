@@ -9,20 +9,25 @@ import {
   IdeaAPI,
   PhaseAPI,
   type AIGenerateRequest,
-  type CreateFromSuggestionRequest,
   type AISuggestion,
   type Feature,
   type Idea,
   type Phase,
 } from '@/lib/api/idea'
+import { AttachmentAPI, type Attachment } from '@/lib/api/attachments'
+import { ExportAPI } from '@/lib/api/export'
 import { CopilotAPI } from '@/lib/api/copilot'
+import { MarketGapResults } from '@/components/dashboard/MarketGapResults'
+import { Toast } from '@/components/dashboard/Toast'
 import { normalizeGaps, type GapItem } from '@/lib/dashboard/gaps'
+import { hasGapRun, loadGapsForIdea, saveGapsForIdea } from '@/lib/dashboard/gap-storage'
+import { suggestionBody, suggestionItemType } from '@/lib/dashboard/suggestions'
 import { formatDate, ideaScore, priorityShort, statusLabel, timeAgo } from '@/lib/dashboard/format'
 import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
-const VALID_TABS = ['overview', 'roadmap', 'intelligence', 'copilot'] as const
+const VALID_TABS = ['overview', 'roadmap', 'intelligence', 'copilot', 'attachments'] as const
 const SUGGESTION_TYPES: AIGenerateRequest['suggestion_type'][] = ['features', 'phases', 'improvements', 'marketing', 'validation']
 
 export default function IdeaDetailPage() {
@@ -38,7 +43,7 @@ function IdeaDetailContent() {
   const params = useParams()
   const searchParams = useSearchParams()
   const ideaId = params.id as string
-  const [tab, setTab] = useState<'overview' | 'roadmap' | 'intelligence' | 'copilot'>('overview')
+  const [tab, setTab] = useState<'overview' | 'roadmap' | 'intelligence' | 'copilot' | 'attachments'>('overview')
   const [idea, setIdea] = useState<Idea | null>(null)
   const [features, setFeatures] = useState<Feature[]>([])
   const [phases, setPhases] = useState<Phase[]>([])
@@ -54,6 +59,10 @@ function IdeaDetailContent() {
   const [suggestionType, setSuggestionType] = useState<AIGenerateRequest['suggestion_type']>('features')
   const [copilotMessages, setCopilotMessages] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([])
   const [copilotInput, setCopilotInput] = useState('')
+  const [attachments, setAttachments] = useState<Attachment[]>([])
+  const [marketGapDone, setMarketGapDone] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
+  const [exportBusy, setExportBusy] = useState<'markdown' | 'pdf' | null>(null)
   const { setIdeaDetailTitle } = useDashboardChrome()
 
   useEffect(() => {
@@ -67,18 +76,20 @@ function IdeaDetailContent() {
       t === 'comp' ? 'intelligence' :
       t === 'ai' ? 'copilot' :
       t === 'features' ? 'overview' :
+      t === 'attachments' ? 'attachments' :
       t
     if (mapped && (VALID_TABS as readonly string[]).includes(mapped)) {
       setTab(mapped as typeof tab)
     }
   }, [searchParams])
 
-  const showExportBanner = searchParams.get('action') === 'export'
-  const gapRunKey = `ic-gap-runs:${ideaId}`
-  const marketGapAnalyzed = useMemo(
-    () => gaps.length > 0 || (typeof window !== 'undefined' && window.localStorage.getItem(gapRunKey) === '1'),
-    [gaps.length, gapRunKey],
-  )
+  const showExportPanel = searchParams.get('action') === 'export'
+
+  useEffect(() => {
+    if (!ideaId) return
+    setGaps(loadGapsForIdea(ideaId))
+    setMarketGapDone(hasGapRun(ideaId))
+  }, [ideaId])
 
   const load = useCallback(async () => {
     if (!ideaId) return
@@ -86,9 +97,10 @@ function IdeaDetailContent() {
       setLoading(true)
       setError(null)
       const detail = await IdeaAPI.getIdea(ideaId)
-      const [sugs, comp] = await Promise.all([
+      const [sugs, comp, atts] = await Promise.all([
         AIAPI.getSuggestions(ideaId).catch(() => []),
         CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] })),
+        AttachmentAPI.listForIdea(ideaId).catch(() => []),
       ])
       setIdea(detail.idea)
       setIdeaDetailTitle(detail.idea.title)
@@ -96,7 +108,9 @@ function IdeaDetailContent() {
       setPhases(detail.phases || [])
       setSuggestions(sugs)
       setCompetitors(comp.research || comp.competitors || [])
-      setGaps([])
+      setAttachments(atts)
+      setGaps(loadGapsForIdea(ideaId))
+      setMarketGapDone(hasGapRun(ideaId))
       setCopilotMessages([])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load idea')
@@ -169,10 +183,10 @@ function IdeaDetailContent() {
   async function addSuggestionToIdea(s: AISuggestion) {
     try {
       setBusyAction(`apply:${s.id}`)
-      const itemType: CreateFromSuggestionRequest['item_type'] =
-        s.suggestion_type?.toLowerCase().includes('phase') ? 'phase' : 'feature'
+      const itemType = suggestionItemType(s)
       await AIAPI.createFromSuggestion({ suggestion_id: s.id, item_type: itemType, idea_id: ideaId })
       await load()
+      setToast(`Added to your idea as a ${itemType}.`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add suggestion')
     } finally {
@@ -199,8 +213,29 @@ function IdeaDetailContent() {
       await IdeaAPI.runCompetitorAnalysis(ideaId)
       const comp = await CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] }))
       setCompetitors(comp.research || comp.competitors || [])
+      setToast('Competitor analysis complete.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed competitor analysis')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function analyzeCompetitor(c: Record<string, unknown>) {
+    const url = String(c.competitor_url || c.url || '')
+    try {
+      setBusyAction(`analyze:${c.id}`)
+      if (url) {
+        await CompetitorAPI.scrapeCompetitors({ idea_id: ideaId, urls: [url], analyze: true })
+      } else {
+        await runCompetitorAnalysis()
+        return
+      }
+      const comp = await CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] }))
+      setCompetitors(comp.research || comp.competitors || [])
+      setToast('Competitor analyzed.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to analyze competitor')
     } finally {
       setBusyAction(null)
     }
@@ -212,11 +247,67 @@ function IdeaDetailContent() {
       const result = await IdeaAPI.marketGapAnalysis(ideaId)
       const normalized = normalizeGaps(result)
       setGaps(normalized)
-      if (typeof window !== 'undefined') window.localStorage.setItem(gapRunKey, '1')
+      saveGapsForIdea(ideaId, normalized)
+      setMarketGapDone(true)
+      setToast('Market gap analysis complete.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed market gap analysis')
     } finally {
       setBusyAction(null)
+    }
+  }
+
+  async function uploadAttachment(file: File) {
+    try {
+      setBusyAction('upload')
+      const att = await AttachmentAPI.upload(ideaId, file)
+      setAttachments(prev => [att, ...prev])
+      setToast('File uploaded.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function downloadMarkdownExport() {
+    try {
+      setExportBusy('markdown')
+      const { markdown } = await ExportAPI.exportMarkdown(ideaId)
+      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${idea?.title || 'idea'}.md`
+      a.click()
+      URL.revokeObjectURL(url)
+      setToast('Markdown export downloaded.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed')
+    } finally {
+      setExportBusy(null)
+    }
+  }
+
+  async function downloadPdfExport() {
+    try {
+      setExportBusy('pdf')
+      const { pdfBase64 } = await ExportAPI.exportPdf(ideaId)
+      const bin = atob(pdfBase64)
+      const bytes = new Uint8Array(bin.length)
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+      const blob = new Blob([bytes], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${idea?.title || 'idea'}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+      setToast('PDF export downloaded.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'PDF export failed')
+    } finally {
+      setExportBusy(null)
     }
   }
 
@@ -254,19 +345,44 @@ function IdeaDetailContent() {
   const completed = features.filter(f => f.is_completed).length
   const score = ideaScore(idea)
   const featuresByPhase = useMemo(() => {
-    const byPhase: Record<string, number> = {}
+    const byPhase: Record<string, { total: number; done: number }> = {}
     for (const f of features) {
       if (!f.phase_id) continue
-      byPhase[f.phase_id] = (byPhase[f.phase_id] ?? 0) + 1
+      if (!byPhase[f.phase_id]) byPhase[f.phase_id] = { total: 0, done: 0 }
+      byPhase[f.phase_id].total += 1
+      if (f.is_completed) byPhase[f.phase_id].done += 1
     }
     return byPhase
   }, [features])
+  const marketGapAnalyzed = gaps.length > 0 || marketGapDone
   const readiness = [
     { label: 'Idea described', done: Boolean(idea.description?.trim()), action: () => setTab('overview') },
-    { label: 'Features added', done: features.length > 0, action: () => { setTab('overview'); setSuggestionType('features') } },
+    {
+      label: 'Features added',
+      done: features.length > 0,
+      action: () => {
+        setTab('overview')
+        setSuggestionType('features')
+        void generateSuggestions()
+      },
+    },
     { label: 'Roadmap created', done: phases.length > 0, action: () => setTab('roadmap') },
-    { label: 'Competitors researched', done: competitors.length > 0, action: () => setTab('intelligence') },
-    { label: 'Market gap analyzed', done: marketGapAnalyzed, action: () => { setTab('intelligence'); runMarketGapAnalysis() } },
+    {
+      label: 'Competitors researched',
+      done: competitors.length > 0,
+      action: () => {
+        setTab('intelligence')
+        void discoverCompetitors()
+      },
+    },
+    {
+      label: 'Market gap analyzed',
+      done: marketGapAnalyzed,
+      action: () => {
+        setTab('intelligence')
+        void runMarketGapAnalysis()
+      },
+    },
   ]
   const copilotPrompts = [
     `Generate features for ${idea.title}`,
@@ -276,6 +392,7 @@ function IdeaDetailContent() {
 
   return (
     <div className="page">
+      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
       <div className="page-head">
         <div>
           <div className="ph-eyebrow">Idea · {statusLabel(idea.status)}</div>
@@ -290,7 +407,7 @@ function IdeaDetailContent() {
             type="button"
             className="btn-sm ghost"
             onClick={() => router.push(routes.ideaExport(ideaId))}
-            aria-current={showExportBanner ? 'true' : undefined}
+            aria-current={showExportPanel ? 'true' : undefined}
           >
             <DI.Export/> Export
           </button>
@@ -298,7 +415,7 @@ function IdeaDetailContent() {
             type="button"
             className="btn-sm ghost"
             title="Attachments for this idea"
-            onClick={() => router.push(routes.ideaExport(ideaId))}
+            onClick={() => router.push(routes.ideaAttachments(ideaId))}
           >
             <DI.Folder/> Attachments
           </button>
@@ -308,12 +425,23 @@ function IdeaDetailContent() {
         </div>
       </div>
 
-      {showExportBanner && (
+      {showExportPanel && (
         <div className="idea-export-banner dash-card">
-          <span>Export this idea as PDF, Markdown, or a bundle — full export UI ships in a later update. Use Copilot to draft content now.</span>
-          <button type="button" className="btn-sm solid" onClick={() => router.push(routes.copilotForIdea(ideaId))}>
-            <DI.Spark/> Draft with Copilot
-          </button>
+          <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Export idea</div>
+          <p style={{ color: 'var(--fg-2)', fontSize: 14, marginBottom: 12 }}>
+            Download this idea from your workspace via the export API.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" className="btn-sm solid" onClick={() => void downloadMarkdownExport()} disabled={exportBusy !== null}>
+              <DI.Export /> {exportBusy === 'markdown' ? 'Exporting…' : 'Markdown'}
+            </button>
+            <button type="button" className="btn-sm ghost" onClick={() => void downloadPdfExport()} disabled={exportBusy !== null}>
+              <DI.Doc /> {exportBusy === 'pdf' ? 'Exporting…' : 'PDF'}
+            </button>
+            <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.copilotForIdea(ideaId))}>
+              <DI.Spark/> Draft with Copilot
+            </button>
+          </div>
         </div>
       )}
 
@@ -361,6 +489,7 @@ function IdeaDetailContent() {
               { id: 'roadmap', label: 'Roadmap', count: String(phases.length) },
               { id: 'intelligence', label: 'Intelligence', count: String(competitors.length) },
               { id: 'copilot', label: 'Copilot', count: '' },
+              { id: 'attachments', label: 'Attachments', count: String(attachments.length) },
             ].map(t => (
               <button
                 key={t.id}
@@ -433,12 +562,30 @@ function IdeaDetailContent() {
                       {suggestions.map(s => (
                         <div key={s.id} className="sug-card">
                           <span className="s-label"><DI.Sparkles/> {s.suggestion_type}</span>
-                          <div className="s-body">{s.suggestion_text || String(s.content || '')}</div>
+                          <div className="s-body">{suggestionBody(s)}</div>
                           <div className="s-actions">
                             <button type="button" className="s-act accept" onClick={() => addSuggestionToIdea(s)} disabled={busyAction === `apply:${s.id}`}>
                               {busyAction === `apply:${s.id}` ? 'Adding…' : 'Add to Idea'}
                             </button>
                           </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="dash-card" style={{ padding: 12 }}>
+                  <div className="id-panel-head" style={{ marginBottom: 10, padding: 0, border: 0 }}>
+                    <h3 style={{ fontSize: 16, fontWeight: 500 }}>Feature scope</h3>
+                  </div>
+                  {features.length === 0 ? (
+                    <p style={{ color: 'var(--fg-2)' }}>No features yet. Generate suggestions above or add them on the Roadmap tab.</p>
+                  ) : (
+                    <div className="feat-list">
+                      {features.map(f => (
+                        <div key={f.id} className={`feat-item ${f.is_completed ? 'done' : ''}`} onClick={() => toggleFeature(f)}>
+                          <span className="ck">{f.is_completed && <DI.Check/>}</span>
+                          <span className={`prio ${f.priority}`}>{priorityShort(f.priority)}</span>
+                          <span className="label">{f.title}</span>
                         </div>
                       ))}
                     </div>
@@ -482,7 +629,11 @@ function IdeaDetailContent() {
                       <div className="p-body">
                         <div className="p-row"><span>{p.name}</span></div>
                         <div className="p-desc">{p.description}</div>
-                        <div className="p-meta"><span><b>{featuresByPhase[p.id] ?? 0}</b> features</span></div>
+                        <div className="p-meta">
+                          <span>
+                            <b>{featuresByPhase[p.id]?.done ?? 0}</b>/{featuresByPhase[p.id]?.total ?? 0} features complete
+                          </span>
+                        </div>
                         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                           <input
                             style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--bg-2)', color: 'var(--fg)' }}
@@ -532,11 +683,20 @@ function IdeaDetailContent() {
                     const name = String(c.competitor_name || c.name || `Competitor ${idx + 1}`)
                     const meta = String(c.market_position || c.description || '')
                     const conf = Math.round(Number(c.confidence_score) || 50)
+                    const cid = String(c.id || idx)
                     return (
-                      <div key={String(c.id || idx)} className="pricing-row">
+                      <div key={cid} className="pricing-row" style={{ gridTemplateColumns: '36px 1fr auto auto auto' }}>
                         <span className="ci-logo">{name[0]}</span>
                         <span><div className="nm">{name}</div><div className="meta">{meta}</div></span>
                         <div style={{ width: 80 }}><div className="ci-bar"><div className="fill" style={{ width: `${conf}%` }}/></div></div>
+                        <button
+                          type="button"
+                          className="btn-sm ghost"
+                          onClick={() => void analyzeCompetitor(c)}
+                          disabled={Boolean(busyAction)}
+                        >
+                          {busyAction === `analyze:${c.id}` ? '…' : 'Analyze'}
+                        </button>
                         <span className="pr">{conf}</span>
                       </div>
                     )
@@ -551,17 +711,9 @@ function IdeaDetailContent() {
                   </button>
                 </div>
                 {gaps.length === 0 ? (
-                  <p style={{ color: 'var(--fg-2)' }}>No market gap results yet.</p>
+                  <p style={{ color: 'var(--fg-2)' }}>No market gap results yet. Run analysis to see opportunity cards.</p>
                 ) : (
-                  <div style={{ display: 'grid', gap: 10 }}>
-                    {gaps.map((g, idx) => (
-                      <div key={`${g.title || idx}`} className="dash-card" style={{ padding: 12 }}>
-                        <div className="eyebrow-mono" style={{ marginBottom: 6 }}>Opportunity #{idx + 1}</div>
-                        <h4 style={{ fontSize: 16, marginBottom: 6 }}>{g.title || g.opportunity || 'Untitled opportunity'}</h4>
-                        <p style={{ color: 'var(--fg-2)' }}>{g.description || 'No description'}</p>
-                      </div>
-                    ))}
-                  </div>
+                  <MarketGapResults gaps={gaps} ideaId={ideaId} />
                 )}
               </div>
             </div>
@@ -611,18 +763,41 @@ function IdeaDetailContent() {
             </div>
           )}
 
-          {tab === 'overview' && (
+          {tab === 'attachments' && (
             <div className="id-panel">
-              <div className="id-panel-head"><h3>Current feature scope</h3></div>
-              {features.length === 0 ? (
-                <p style={{ color: 'var(--fg-2)' }}>No features yet.</p>
+              <div className="id-panel-head"><h3>Attachments</h3></div>
+              <div className="dash-card" style={{ padding: 12 }}>
+                <div className="eyebrow-mono" style={{ marginBottom: 10 }}>Upload file</div>
+                <input
+                  type="file"
+                  onChange={e => {
+                    const file = e.target.files?.[0]
+                    if (file) void uploadAttachment(file)
+                    e.target.value = ''
+                  }}
+                  disabled={busyAction === 'upload'}
+                />
+                <p style={{ color: 'var(--fg-3)', fontSize: 12, marginTop: 8 }}>Images, PDF, Office docs, text — max 20 MB.</p>
+              </div>
+              {attachments.length === 0 ? (
+                <p style={{ color: 'var(--fg-2)' }}>No attachments yet.</p>
               ) : (
-                <div className="feat-list">
-                  {features.map(f => (
-                    <div key={f.id} className={`feat-item ${f.is_completed ? 'done' : ''}`} onClick={() => toggleFeature(f)}>
-                      <span className="ck">{f.is_completed && <DI.Check/>}</span>
-                      <span className={`prio ${f.priority}`}>{priorityShort(f.priority)}</span>
-                      <span className="label">{f.title}</span>
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {attachments.map(a => (
+                    <div key={a.id} className="dash-card" style={{ padding: 12, display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                      <div>
+                        <div style={{ fontSize: 14 }}>{a.file_name}</div>
+                        {a.file_size != null && (
+                          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-3)' }}>
+                            {Math.round(a.file_size / 1024)} KB
+                          </div>
+                        )}
+                      </div>
+                      {a.signed_url && (
+                        <a href={a.signed_url} target="_blank" rel="noreferrer" className="btn-sm ghost">
+                          <DI.Export /> Open
+                        </a>
+                      )}
                     </div>
                   ))}
                 </div>
