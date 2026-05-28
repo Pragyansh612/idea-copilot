@@ -42,7 +42,7 @@ export default function NewIdeaPage() {
         priority,
         tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       })
-      router.push(routes.idea(idea.id))
+      router.push(`${routes.idea(idea.id)}?created=1`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create idea')
     } finally {

@@ -66,7 +66,9 @@ export default function MyIdeasPage() {
 
       {error && <PageError message={error} onRetry={load} />}
 
-      {!error && (
+      {loading && !error && <PageLoading label="Loading ideas…" />}
+
+      {!error && !loading && (
       <>
       <div className="ideas-filterbar">
         <div className="seg">
@@ -83,9 +85,7 @@ export default function MyIdeasPage() {
         <span className="sort"><DI.Down/> sort · recent</span>
       </div>
 
-      {loading ? (
-        <PageLoading label="Loading ideas…" />
-      ) : list.length === 0 ? (
+      {list.length === 0 ? (
         <PageEmpty
           icon={<DI.Bulb />}
           title={ideas.length === 0 ? 'No ideas yet' : 'No ideas match this filter'}

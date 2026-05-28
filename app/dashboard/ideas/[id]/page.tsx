@@ -70,6 +70,13 @@ function IdeaDetailContent() {
   }, [setIdeaDetailTitle])
 
   useEffect(() => {
+    if (searchParams.get('created') === '1') {
+      setToast('Idea created. Use the readiness checklist below for your next steps.')
+      router.replace(routes.idea(ideaId), { scroll: false })
+    }
+  }, [searchParams, ideaId, router])
+
+  useEffect(() => {
     const t = searchParams.get('tab')
     const mapped =
       t === 'phases' ? 'roadmap' :
@@ -84,6 +91,12 @@ function IdeaDetailContent() {
   }, [searchParams])
 
   const showExportPanel = searchParams.get('action') === 'export'
+
+  useEffect(() => {
+    if (searchParams.get('action') === 'export') {
+      setTab('overview')
+    }
+  }, [searchParams])
 
   useEffect(() => {
     if (!ideaId) return

@@ -28,6 +28,7 @@ export default function DashboardHome() {
   const [nextAction, setNextAction] = useState<NextAction | null>(null)
   const [competitorNudge, setCompetitorNudge] = useState<{ id: string; title: string } | null>(null)
   const [profileName, setProfileName] = useState<string | undefined>()
+  const [recentAchievements, setRecentAchievements] = useState<Array<{ title: string; icon?: string }>>([])
   const [xp, setXp] = useState(0)
   const [level, setLevel] = useState(1)
 
@@ -35,14 +36,21 @@ export default function DashboardHome() {
     try {
       setLoading(true)
       setError(null)
-      const [me, stats, ideasData, profile] = await Promise.all([
+      const [me, stats, ideasData, profile, achievements] = await Promise.all([
         AuthAPI.getMe(),
         import('@/lib/api/user').then(m => m.UserAPI.getStats()).catch(() => null),
         IdeaAPI.getIdeas({ limit: 20, sort_by: 'updated_at', sort_order: 'desc' }),
         import('@/lib/api/user').then(m => m.UserAPI.getProfile()).catch(() => null),
+        import('@/lib/api/achievement').then(m => m.AchievementAPI.getUserAchievements()).catch(() => []),
       ])
       setAuthUser(me)
       setProfileName(profile?.display_name)
+      setRecentAchievements(
+        [...achievements]
+          .sort((a, b) => new Date(b.unlocked_at).getTime() - new Date(a.unlocked_at).getTime())
+          .slice(0, 3)
+          .map(a => ({ title: a.title, icon: a.icon })),
+      )
       setIdeas(ideasData.ideas)
       setXp(stats?.total_xp ?? 0)
       setLevel(stats?.current_level ?? 1)
@@ -250,9 +258,19 @@ export default function DashboardHome() {
           </div>
         </div>
         <div className="founder-progress-achievements">
-          <span className="founder-achievement-pill">{ideas.length} ideas tracked</span>
-          <span className="founder-achievement-pill">{recentIdeas.filter(i => i.status === 'in_progress').length} active ideas</span>
-          <span className="founder-achievement-pill">{recentIdeas.length} recently updated</span>
+          {recentAchievements.length > 0 ? (
+            recentAchievements.map(a => (
+              <span key={a.title} className="founder-achievement-pill">
+                {a.icon ? `${a.icon} ` : ''}{a.title}
+              </span>
+            ))
+          ) : (
+            <>
+              <span className="founder-achievement-pill">{ideas.length} ideas tracked</span>
+              <span className="founder-achievement-pill">{recentIdeas.filter(i => i.status === 'in_progress').length} active ideas</span>
+              <span className="founder-achievement-pill">{recentIdeas.length} recently updated</span>
+            </>
+          )}
         </div>
       </div>
       </>
