@@ -327,6 +327,19 @@ function IdeaDetailContent() {
     }
   }
 
+  const featuresByPhase = useMemo(() => {
+    const byPhase: Record<string, { total: number; done: number }> = {}
+    for (const f of features) {
+      if (!f.phase_id) continue
+      if (!byPhase[f.phase_id]) byPhase[f.phase_id] = { total: 0, done: 0 }
+      byPhase[f.phase_id].total += 1
+      if (f.is_completed) byPhase[f.phase_id].done += 1
+    }
+    return byPhase
+  }, [features])
+
+  const marketGapAnalyzed = gaps.length > 0 || marketGapDone
+
   if (loading) {
     return <div className="page"><PageLoading label="Loading idea…" /></div>
   }
@@ -342,19 +355,7 @@ function IdeaDetailContent() {
     )
   }
 
-  const completed = features.filter(f => f.is_completed).length
   const score = ideaScore(idea)
-  const featuresByPhase = useMemo(() => {
-    const byPhase: Record<string, { total: number; done: number }> = {}
-    for (const f of features) {
-      if (!f.phase_id) continue
-      if (!byPhase[f.phase_id]) byPhase[f.phase_id] = { total: 0, done: 0 }
-      byPhase[f.phase_id].total += 1
-      if (f.is_completed) byPhase[f.phase_id].done += 1
-    }
-    return byPhase
-  }, [features])
-  const marketGapAnalyzed = gaps.length > 0 || marketGapDone
   const readiness = [
     { label: 'Idea described', done: Boolean(idea.description?.trim()), action: () => setTab('overview') },
     {
