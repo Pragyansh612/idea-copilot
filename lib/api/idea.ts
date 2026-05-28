@@ -474,6 +474,20 @@ export class IdeaAPI {
     });
     return result.data.gaps;
   }
+
+  static async discoverCompetitors(ideaId: string): Promise<unknown> {
+    const result = await fetchWithAuth(`${API_URL}/api/ideas/${ideaId}/discover-competitors`, {
+      method: 'POST',
+    });
+    return result.data;
+  }
+
+  static async runCompetitorAnalysis(ideaId: string): Promise<unknown> {
+    const result = await fetchWithAuth(`${API_URL}/api/ideas/${ideaId}/competitor-analysis`, {
+      method: 'POST',
+    });
+    return result.data;
+  }
 }
 
 // ==================== RELATED IDEAS API ====================
@@ -606,6 +620,11 @@ export class CompetitorAPI {
 
   static async getCompetitorResearch(ideaId: string): Promise<any> {
     const result = await fetchWithAuth(`${API_URL}/api/competitor/${ideaId}`);
+    return result.data;
+  }
+
+  static async getCompetitorFeatures(competitorId: string): Promise<{ features: Array<{ id: string; competitor_id: string; feature_name: string; description?: string }>; total: number }> {
+    const result = await fetchWithAuth(`${API_URL}/api/competitor/${competitorId}/features`);
     return result.data;
   }
 }

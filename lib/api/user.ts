@@ -9,10 +9,19 @@ export interface UserProfile {
   display_name?: string;
   avatar_url?: string;
   bio?: string;
-  location?: string;
-  website?: string;
+  theme?: 'light' | 'dark';
+  timezone?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface UserProfileUpdate {
+  username?: string;
+  display_name?: string;
+  avatar_url?: string;
+  bio?: string;
+  theme?: 'light' | 'dark';
+  timezone?: string;
 }
 
 export interface UserStats {
@@ -63,6 +72,14 @@ export class UserAPI {
   static async getStats(): Promise<UserStats> {
     const result = await fetchWithAuth(`${API_URL}/api/stats`);
     return result.data.stats;
+  }
+
+  static async updateProfile(data: UserProfileUpdate): Promise<UserProfile> {
+    const result = await fetchWithAuth(`${API_URL}/api/profile`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return result.data.profile;
   }
 
   static async updateStats(data: UserStatsUpdate): Promise<UserStats> {

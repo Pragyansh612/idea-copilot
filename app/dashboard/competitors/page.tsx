@@ -1,22 +1,90 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
+import { CompetitorFeatureMatrix } from '@/components/dashboard/CompetitorFeatureMatrix'
+import { MarketPositionMap } from '@/components/dashboard/MarketPositionMap'
+import { StrategicInsightsCard } from '@/components/dashboard/StrategicInsightsCard'
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
-import { CompetitorAPI, IdeaAPI, type Idea } from '@/lib/api/idea'
-import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
+import { CopilotAPI } from '@/lib/api/copilot'
+import {
+  CompetitorAPI,
+  IdeaAPI,
+  type Feature,
+  type Idea,
+} from '@/lib/api/idea'
+import {
+  buildFeatureMatrix,
+  buildPositionMap,
+  competitorDescription,
+  competitorDisplayName,
+  competitorWebsite,
+  computeWorkspaceStats,
+  parseStrategicInsights,
+  type CompetitorFeature,
+  type CompetitorRow,
+  type StrategicSection,
+  type WorkspaceCompetitorStats,
+} from '@/lib/dashboard/competitor-intel'
+import { routes } from '@/lib/routes'
 
 function CompetitorsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [ideas, setIdeas] = useState<Idea[]>([])
   const [selectedIdeaId, setSelectedIdeaId] = useState('')
-  const [competitors, setCompetitors] = useState<Array<Record<string, unknown>>>([])
+  const [competitors, setCompetitors] = useState<CompetitorRow[]>([])
+  const [yourFeatures, setYourFeatures] = useState<Feature[]>([])
+  const [competitorsByIdea, setCompetitorsByIdea] = useState<Record<string, CompetitorRow[]>>({})
+  const [featuresByCompetitor, setFeaturesByCompetitor] = useState<Record<string, CompetitorFeature[]>>({})
+  const [featureCountByCompetitor, setFeatureCountByCompetitor] = useState<Record<string, number>>({})
+  const [workspaceStats, setWorkspaceStats] = useState<WorkspaceCompetitorStats>({
+    tracked: 0,
+    analyzed: 0,
+    featuresExtracted: 0,
+    marketGapsFound: 0,
+  })
+  const [expandedFeatures, setExpandedFeatures] = useState<string | null>(null)
+  const [strategicSections, setStrategicSections] = useState<StrategicSection[] | null>(null)
   const [ideasLoading, setIdeasLoading] = useState(true)
-  const [dataLoading, setDataLoading] = useState(false)
+  const [ideaDataLoading, setIdeaDataLoading] = useState(false)
+  const [matrixLoading, setMatrixLoading] = useState(false)
+  const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [insightsLoading, setInsightsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const loadWorkspaceAggregates = useCallback(async (ideaList: Idea[]) => {
+    const byIdea: Record<string, CompetitorRow[]> = {}
+    const featCounts: Record<string, number> = {}
+    await Promise.all(
+      ideaList.map(async idea => {
+        try {
+          const data = await CompetitorAPI.getCompetitorResearch(idea.id)
+          const rows = (data.research || data.competitors || []) as CompetitorRow[]
+          byIdea[idea.id] = rows
+          await Promise.all(
+            rows.map(async c => {
+              const cid = String(c.id)
+              if (!cid || cid === 'undefined') return
+              try {
+                const fr = await CompetitorAPI.getCompetitorFeatures(cid)
+                const feats = (fr.features || []) as CompetitorFeature[]
+                featCounts[cid] = feats.length
+              } catch {
+                featCounts[cid] = 0
+              }
+            }),
+          )
+        } catch {
+          byIdea[idea.id] = []
+        }
+      }),
+    )
+    setCompetitorsByIdea(byIdea)
+    setFeatureCountByCompetitor(featCounts)
+    setWorkspaceStats(computeWorkspaceStats(byIdea, featCounts))
+  }, [])
 
   const loadIdeas = useCallback(async () => {
     try {
@@ -30,131 +98,313 @@ function CompetitorsContent() {
       } else if (r.ideas[0]) {
         setSelectedIdeaId(r.ideas[0].id)
       }
+      void loadWorkspaceAggregates(r.ideas)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ideas')
     } finally {
       setIdeasLoading(false)
     }
-  }, [searchParams])
+  }, [loadWorkspaceAggregates, searchParams])
 
-  const loadCompetitors = useCallback(async () => {
-    if (!selectedIdeaId) return
+  const loadIdeaIntel = useCallback(async (ideaId: string) => {
+    if (!ideaId) return
     try {
-      setDataLoading(true)
+      setIdeaDataLoading(true)
+      setMatrixLoading(true)
       setError(null)
-      const data = await CompetitorAPI.getCompetitorResearch(selectedIdeaId)
-      setCompetitors(data.research || data.competitors || [])
+      const [detail, compData] = await Promise.all([
+        IdeaAPI.getIdea(ideaId),
+        CompetitorAPI.getCompetitorResearch(ideaId),
+      ])
+      const rows = (compData.research || compData.competitors || []) as CompetitorRow[]
+      setYourFeatures(detail.features || [])
+      setCompetitors(rows)
+
+      const featMap: Record<string, CompetitorFeature[]> = {}
+      await Promise.all(
+        rows.map(async (c, idx) => {
+          const cid = String(c.id)
+          if (!cid || cid === 'undefined') return
+          try {
+            const fr = await CompetitorAPI.getCompetitorFeatures(cid)
+            featMap[cid] = (fr.features || []) as CompetitorFeature[]
+          } catch {
+            featMap[cid] = []
+          }
+        }),
+      )
+      setFeaturesByCompetitor(featMap)
+      setCompetitorsByIdea(prev => {
+        const next = { ...prev, [ideaId]: rows }
+        setFeatureCountByCompetitor(prevCounts => {
+          const counts = { ...prevCounts }
+          for (const [cid, feats] of Object.entries(featMap)) {
+            counts[cid] = feats.length
+          }
+          setWorkspaceStats(computeWorkspaceStats(next, counts))
+          return counts
+        })
+        return next
+      })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load competitors')
+      setError(err instanceof Error ? err.message : 'Failed to load competitor intelligence')
       setCompetitors([])
+      setYourFeatures([])
+      setFeaturesByCompetitor({})
     } finally {
-      setDataLoading(false)
+      setIdeaDataLoading(false)
+      setMatrixLoading(false)
     }
-  }, [selectedIdeaId])
+  }, [])
 
   useEffect(() => {
     loadIdeas()
   }, [loadIdeas])
 
   useEffect(() => {
-    if (selectedIdeaId) loadCompetitors()
-  }, [selectedIdeaId, loadCompetitors])
+    if (selectedIdeaId) loadIdeaIntel(selectedIdeaId)
+  }, [selectedIdeaId, loadIdeaIntel])
 
-  const loading = ideasLoading || (selectedIdeaId && dataLoading)
+  const selectedIdea = useMemo(
+    () => ideas.find(i => i.id === selectedIdeaId),
+    [ideas, selectedIdeaId],
+  )
+
+  const matrix = useMemo(
+    () => buildFeatureMatrix(yourFeatures, competitors, featuresByCompetitor),
+    [yourFeatures, competitors, featuresByCompetitor],
+  )
+
+  const positionPoints = useMemo(
+    () => buildPositionMap(yourFeatures, competitors, featuresByCompetitor),
+    [yourFeatures, competitors, featuresByCompetitor],
+  )
+
+  async function discoverCompetitors() {
+    if (!selectedIdeaId) return
+    try {
+      setBusyAction('discover')
+      setError(null)
+      await IdeaAPI.discoverCompetitors(selectedIdeaId)
+      await loadIdeaIntel(selectedIdeaId)
+      await loadWorkspaceAggregates(ideas)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Competitor discovery failed')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function analyzeCompetitor(c: CompetitorRow) {
+    if (!selectedIdeaId) return
+    const url = competitorWebsite(c)
+    try {
+      setBusyAction(`analyze-${c.id}`)
+      setError(null)
+      if (url) {
+        await CompetitorAPI.scrapeCompetitors({
+          idea_id: selectedIdeaId,
+          urls: [url],
+          analyze: true,
+        })
+      } else {
+        await IdeaAPI.runCompetitorAnalysis(selectedIdeaId)
+      }
+      await loadIdeaIntel(selectedIdeaId)
+      await loadWorkspaceAggregates(ideas)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Analysis failed')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function generateStrategicInsights() {
+    if (!selectedIdea) return
+    const names = competitors.map((c, i) => competitorDisplayName(c, i)).join(', ')
+    const prompt = `Based on my idea "${selectedIdea.title}" and these competitors: ${names || 'none yet'}, give me:
+1. Top 3 competitor weaknesses
+2. Top 3 opportunities for my product
+3. The single fastest differentiator I can build
+
+Use numbered lists under clear headings.`
+    try {
+      setInsightsLoading(true)
+      setError(null)
+      const res = await CopilotAPI.chat({ query: prompt, idea_id: selectedIdea.id })
+      setStrategicSections(parseStrategicInsights(res.response))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate insights')
+    } finally {
+      setInsightsLoading(false)
+    }
+  }
+
+  const loading = ideasLoading || (selectedIdeaId && ideaDataLoading)
 
   return (
-    <div className="page">
+    <div className="page ci-workspace">
       <div className="page-head">
         <div>
-          <div className="ph-eyebrow">Competitors · live</div>
+          <div className="ph-eyebrow">Competitor intelligence · workspace</div>
           <h1>The market, <em>mapped</em>.</h1>
-          <div className="ph-sub">Competitor research loaded from your backend for each idea.</div>
-        </div>
-        <div className="page-head-actions" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {ideas.length === 0 && !ideasLoading && (
-            <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
-              <DI.Plus /> Add an idea
-            </button>
-          )}
-          {ideas.length > 0 && (
-            <select
-              value={selectedIdeaId}
-              onChange={e => setSelectedIdeaId(e.target.value)}
-              className="dash-select"
-              aria-label="Select idea"
-            >
-              {ideas.map(i => (
-                <option key={i.id} value={i.id}>{i.title}</option>
-              ))}
-            </select>
-          )}
+          <div className="ph-sub">Discover competitors, compare features, and generate strategic positioning — powered by your live API.</div>
         </div>
       </div>
 
-      {error && <PageError message={error} onRetry={() => { loadIdeas(); loadCompetitors() }} />}
+      {error && <PageError message={error} onRetry={() => { loadIdeas(); if (selectedIdeaId) loadIdeaIntel(selectedIdeaId) }} />}
 
-      {!error && ideasLoading && <PageLoading label="Loading ideas…" />}
-      {!error && !ideasLoading && ideas.length === 0 && (
-        <PageEmpty
-          icon={<DI.Radar />}
-          title="No ideas yet"
-          description="Create an idea, then discover competitors for it."
-          action={
-            <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
-              <DI.Plus /> New idea
-            </button>
-          }
-        />
-      )}
+      {!error && ideasLoading && <PageLoading label="Loading workspace…" />}
 
-      {!error && !ideasLoading && ideas.length > 0 && (
-        <div className="ci-grid">
-          <div className="ci-panel dash-card" style={{ padding: 0 }}>
-            <div className="ci-panel-head">
-              <span>Competitor table · {competitors.length} found</span>
-              <span className="live">live data</span>
-            </div>
-            {loading ? (
-              <PageLoading label="Loading competitors…" />
-            ) : competitors.length === 0 ? (
-              <PageEmpty
-                icon={<DI.Radar />}
-                title="No competitors yet"
-                description="Run discovery from the idea Intelligence tab or add competitors via the API."
-                action={
-                  selectedIdeaId ? (
-                    <button
-                      type="button"
-                      className="btn-sm solid"
-                      onClick={() => router.push(routes.ideaTab(selectedIdeaId, 'comp'))}
-                    >
-                      Open idea intelligence
-                    </button>
-                  ) : undefined
-                }
-              />
-            ) : (
-              <div className="ci-table">
-                <div className="ci-row h">
-                  <span /><span>Name</span><span>Position</span><span style={{ textAlign: 'right' }}>Confidence</span>
-                </div>
-                {competitors.map((c, idx) => {
-                  const name = String(c.competitor_name || c.name || `Competitor ${idx + 1}`)
-                  const pos = String(c.market_position || c.description || '—')
-                  const score = Math.round(Number(c.confidence_score) || 0)
-                  return (
-                    <div key={String(c.id || idx)} className="ci-row">
-                      <span className="ci-logo">{name[0]}</span>
-                      <span className="ci-name">{name}</span>
-                      <span className="ci-mark">{pos}</span>
-                      <span className="ci-score">{score || '—'}</span>
-                    </div>
-                  )
-                })}
+      {!error && !ideasLoading && (
+        <>
+          <div className="ci-summary-bar">
+            {[
+              { label: 'Competitors tracked', value: workspaceStats.tracked },
+              { label: 'Competitors analyzed', value: workspaceStats.analyzed },
+              { label: 'Features extracted', value: workspaceStats.featuresExtracted },
+              { label: 'Market gaps found', value: workspaceStats.marketGapsFound },
+            ].map(stat => (
+              <div key={stat.label} className="ci-summary-stat dash-card">
+                <span className="ci-summary-value">{stat.value}</span>
+                <span className="ci-summary-label">{stat.label}</span>
               </div>
-            )}
+            ))}
           </div>
-        </div>
+
+          {ideas.length === 0 ? (
+            <PageEmpty
+              icon={<DI.Radar />}
+              title="No ideas yet"
+              description="Create an idea, then discover competitors for it."
+              action={
+                <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
+                  <DI.Plus /> New idea
+                </button>
+              }
+            />
+          ) : (
+            <>
+              <div className="ci-idea-picker dash-card">
+                <div>
+                  <div className="eyebrow-mono">Research context</div>
+                  <p style={{ color: 'var(--fg-2)', fontSize: 14, marginTop: 4 }}>
+                    Select an idea to load competitor intelligence, feature matrix, and positioning map.
+                  </p>
+                </div>
+                <select
+                  value={selectedIdeaId}
+                  onChange={e => {
+                    setSelectedIdeaId(e.target.value)
+                    setStrategicSections(null)
+                    setExpandedFeatures(null)
+                  }}
+                  className="dash-select ci-idea-select"
+                  aria-label="Select idea for competitor research"
+                >
+                  {ideas.map(i => (
+                    <option key={i.id} value={i.id}>{i.title}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="ci-grid ci-grid-main">
+                <div className="ci-side">
+                  <div className="ci-panel dash-card" style={{ padding: 0 }}>
+                    <div className="ci-panel-head">
+                      <span>Competitors · {competitors.length}</span>
+                      {selectedIdea && <span className="live">{selectedIdea.title}</span>}
+                    </div>
+                    <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {loading ? (
+                        <PageLoading label="Loading competitors…" />
+                      ) : competitors.length === 0 ? (
+                        <PageEmpty
+                          icon={<DI.Radar />}
+                          title="No competitors yet"
+                          description="Discover competitors with AI — your fastest path to a filled matrix."
+                        />
+                      ) : (
+                        competitors.map((c, idx) => {
+                          const cid = String(c.id || idx)
+                          const name = competitorDisplayName(c, idx)
+                          const site = competitorWebsite(c)
+                          const desc = competitorDescription(c)
+                          const feats = featuresByCompetitor[cid] || []
+                          const analyzing = busyAction === `analyze-${c.id}`
+                          return (
+                            <div key={cid} className="ci-competitor-card">
+                              <div className="ci-competitor-head">
+                                <span className="ci-logo">{name[0]}</span>
+                                <div>
+                                  <div className="ci-name">{name}</div>
+                                  {site && (
+                                    <a href={site} target="_blank" rel="noreferrer" className="ci-name sub">
+                                      {site.replace(/^https?:\/\//, '').slice(0, 40)}
+                                    </a>
+                                  )}
+                                </div>
+                              </div>
+                              {desc && <p className="ci-competitor-desc">{desc.slice(0, 220)}</p>}
+                              <div className="ci-competitor-actions">
+                                <button
+                                  type="button"
+                                  className="btn-sm ghost"
+                                  onClick={() => analyzeCompetitor(c)}
+                                  disabled={Boolean(busyAction)}
+                                >
+                                  <DI.Sparkles /> {analyzing ? 'Analyzing…' : 'Analyze'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-sm ghost"
+                                  onClick={() => setExpandedFeatures(expandedFeatures === cid ? null : cid)}
+                                >
+                                  <DI.List /> View features ({feats.length})
+                                </button>
+                              </div>
+                              {expandedFeatures === cid && (
+                                <ul className="ci-feature-list">
+                                  {feats.length === 0 ? (
+                                    <li style={{ color: 'var(--fg-3)' }}>No extracted features yet. Run Analyze.</li>
+                                  ) : (
+                                    feats.map(f => (
+                                      <li key={f.id}>{f.feature_name}</li>
+                                    ))
+                                  )}
+                                </ul>
+                              )}
+                            </div>
+                          )
+                        })
+                      )}
+                      <button
+                        type="button"
+                        className="btn-sm solid ci-discover-hero"
+                        onClick={discoverCompetitors}
+                        disabled={!selectedIdeaId || busyAction === 'discover'}
+                      >
+                        <DI.Radar /> {busyAction === 'discover' ? 'Discovering…' : 'Discover new competitors'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="ci-side">
+                  <CompetitorFeatureMatrix matrix={matrix} loading={matrixLoading} />
+                </div>
+              </div>
+
+              <MarketPositionMap points={positionPoints} />
+
+              <StrategicInsightsCard
+                sections={strategicSections}
+                loading={insightsLoading}
+                onGenerate={generateStrategicInsights}
+              />
+            </>
+          )}
+        </>
       )}
     </div>
   )

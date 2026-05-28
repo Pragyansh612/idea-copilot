@@ -59,6 +59,15 @@ export default function SettingsPage() {
   const [reasoning, setReasoning] = useState(true)
   const [auto, setAuto] = useState(true)
   const [refresh, setRefresh] = useState(false)
+  const [editingProfile, setEditingProfile] = useState(false)
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [profileForm, setProfileForm] = useState({
+    display_name: '',
+    username: '',
+    bio: '',
+    timezone: 'UTC',
+  })
 
   async function loadProfile() {
     try {
@@ -70,6 +79,12 @@ export default function SettingsPage() {
       ])
       setProfile(prof)
       setAccountEmail(me?.email ?? prof.email ?? '')
+      setProfileForm({
+        display_name: prof.display_name ?? '',
+        username: prof.username ?? '',
+        bio: prof.bio ?? '',
+        timezone: prof.timezone ?? 'UTC',
+      })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load profile')
     } finally {
@@ -80,6 +95,26 @@ export default function SettingsPage() {
   useEffect(() => {
     loadProfile()
   }, [])
+
+  async function saveProfile() {
+    try {
+      setSavingProfile(true)
+      setError(null)
+      const updated = await UserAPI.updateProfile({
+        display_name: profileForm.display_name || undefined,
+        username: profileForm.username || undefined,
+        bio: profileForm.bio || undefined,
+        timezone: profileForm.timezone || undefined,
+      })
+      setProfile(updated)
+      setEditingProfile(false)
+      setSaveMessage('Profile updated successfully.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update profile')
+    } finally {
+      setSavingProfile(false)
+    }
+  }
 
   const name = displayName(profile?.email, profile?.display_name)
 
@@ -94,6 +129,11 @@ export default function SettingsPage() {
       </div>
 
       {error && section !== 'tokens' && <PageError message={error} onRetry={loadProfile} />}
+      {saveMessage && (
+        <div className="dash-card" style={{ marginBottom: 14, padding: '10px 14px', color: 'var(--good)', fontSize: 13 }}>
+          {saveMessage}
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 20, alignItems: 'flex-start' }}>
         <div className="dash-card" style={{ padding: 10 }}>
@@ -116,10 +156,57 @@ export default function SettingsPage() {
                   <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--fg-3)', marginTop: 2 }}>{accountEmail || '—'}</div>
                 </div>
               </div>
-              <Field label="Display name"><input style={inp} readOnly value={profile?.display_name ?? name}/></Field>
               <Field label="Email"><input style={inp} readOnly value={accountEmail}/></Field>
-              <Field label="Bio"><input style={inp} readOnly value={profile?.bio ?? ''} placeholder="Not set"/></Field>
-              <Field label="Location"><input style={inp} readOnly value={profile?.location ?? ''} placeholder="Not set"/></Field>
+              <Field label="Display name">
+                <input
+                  style={inp}
+                  readOnly={!editingProfile}
+                  value={editingProfile ? profileForm.display_name : (profile?.display_name ?? name)}
+                  onChange={e => setProfileForm(prev => ({ ...prev, display_name: e.target.value }))}
+                />
+              </Field>
+              <Field label="Username">
+                <input
+                  style={inp}
+                  readOnly={!editingProfile}
+                  value={editingProfile ? profileForm.username : (profile?.username ?? '')}
+                  onChange={e => setProfileForm(prev => ({ ...prev, username: e.target.value }))}
+                  placeholder="Not set"
+                />
+              </Field>
+              <Field label="Bio">
+                <textarea
+                  style={{ ...inp, minHeight: 80, resize: 'vertical' }}
+                  readOnly={!editingProfile}
+                  value={editingProfile ? profileForm.bio : (profile?.bio ?? '')}
+                  onChange={e => setProfileForm(prev => ({ ...prev, bio: e.target.value }))}
+                  placeholder="Not set"
+                />
+              </Field>
+              <Field label="Timezone">
+                <input
+                  style={inp}
+                  readOnly={!editingProfile}
+                  value={editingProfile ? profileForm.timezone : (profile?.timezone ?? 'UTC')}
+                  onChange={e => setProfileForm(prev => ({ ...prev, timezone: e.target.value }))}
+                />
+              </Field>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                {editingProfile ? (
+                  <>
+                    <button type="button" className="btn-sm ghost" onClick={() => setEditingProfile(false)} disabled={savingProfile}>
+                      Cancel
+                    </button>
+                    <button type="button" className="btn-sm solid" onClick={saveProfile} disabled={savingProfile}>
+                      {savingProfile ? 'Saving…' : 'Save profile'}
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" className="btn-sm solid" onClick={() => setEditingProfile(true)}>
+                    Edit profile
+                  </button>
+                )}
+              </div>
             </SetCard>
           ) : section === 'workspace' ? (
             <SetCard title="Workspace" desc="Your personal IdeaCopilot workspace.">

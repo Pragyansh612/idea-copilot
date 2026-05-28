@@ -1385,6 +1385,125 @@ body.app-body {
 }
 
 /* ── Competitor Intelligence page ───────────────────────── */
+.ci-summary-bar {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ci-summary-stat {
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ci-summary-value {
+  font-size: 28px;
+  font-weight: 400;
+  letter-spacing: -0.03em;
+  color: var(--fg);
+  font-family: var(--font-serif);
+}
+.ci-summary-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.ci-idea-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+.ci-idea-select {
+  min-width: min(100%, 320px);
+  font-size: 14px;
+  padding: 10px 12px;
+}
+.ci-grid-main {
+  margin-bottom: 16px;
+}
+.ci-competitor-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--fg) 2%, transparent);
+}
+.ci-competitor-head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.ci-competitor-desc {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--fg-2);
+  line-height: 1.5;
+}
+.ci-competitor-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.ci-feature-list {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--fg-2);
+  line-height: 1.6;
+}
+.ci-discover-hero {
+  width: 100%;
+  justify-content: center;
+  padding: 12px 16px !important;
+  margin-top: 4px;
+}
+.fm-summary {
+  padding: 14px 18px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--fg-2);
+}
+.fm-summary b { color: var(--fg); }
+.ci-strat-sections {
+  display: grid;
+  gap: 14px;
+  margin-top: 8px;
+}
+.ci-strat-block h5 {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 8px;
+  color: var(--fg);
+}
+.ci-strat-block ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--fg-2);
+  font-size: 13px;
+  line-height: 1.55;
+}
+.ci-quadrant {
+  width: 100%;
+  max-width: 720px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-2);
+}
+.competitor-nudge {
+  border-color: var(--accent-line);
+  background: linear-gradient(160deg, var(--accent-soft), transparent 70%) var(--surface);
+  margin-bottom: 20px;
+}
+@media (max-width: 900px) {
+  .ci-summary-bar { grid-template-columns: repeat(2, 1fr); }
+}
 .ci-grid {
   display: grid;
   grid-template-columns: 1.6fr 1fr;

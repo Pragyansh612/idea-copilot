@@ -1,65 +1,136 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AchievementAPI, type Achievement } from '@/lib/api/achievement'
-import { IdeaAPI, type Idea } from '@/lib/api/idea'
-import { NotificationAPI, type Notification } from '@/lib/api/notification'
-import { UserAPI, type UserProfile, type UserStats } from '@/lib/api/user'
+import { AuthAPI, type AuthUser } from '@/lib/api/auth'
+import { IdeaAPI, PhaseAPI, type Idea } from '@/lib/api/idea'
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
-import { displayName, ideaScore, statusBadge, timeAgo } from '@/lib/dashboard/format'
+import { displayName, statusBadge, timeAgo } from '@/lib/dashboard/format'
+import { phaseProgress } from '@/lib/dashboard/phase-progress'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
-function Spark({ data, className }: { data: number[]; className?: string }) {
-  const w = 72, h = 26
-  const min = Math.min(...data), max = Math.max(...data)
-  const range = max - min || 1
-  const points = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * w
-    const y = h - ((v - min) / range) * (h - 4) - 2
-    return `${x},${y}`
-  }).join(' ')
-  const area = `0,${h} ${points} ${w},${h}`
-  return (
-    <svg viewBox={`0 0 ${w} ${h}`} className={className} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="sg" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.4"/>
-          <stop offset="100%" stopColor="var(--accent)" stopOpacity="0"/>
-        </linearGradient>
-      </defs>
-      <polygon points={area} fill="url(#sg)" />
-      <polyline points={points} fill="none" stroke="var(--accent)" strokeWidth="1.2" strokeLinejoin="round" strokeLinecap="round"/>
-    </svg>
-  )
+type NextAction = {
+  label: string
+  detail: string
+  cta: string
+  run: () => void
+}
+
+function getGapRunMap(): Record<string, boolean> {
+  if (typeof window === 'undefined') return {}
+  try {
+    return JSON.parse(localStorage.getItem('ic-gap-runs') || '{}') as Record<string, boolean>
+  } catch {
+    return {}
+  }
+}
+
+function saveGapRun(id: string): void {
+  if (typeof window === 'undefined') return
+  const map = getGapRunMap()
+  map[id] = true
+  localStorage.setItem('ic-gap-runs', JSON.stringify(map))
 }
 
 export default function DashboardHome() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [stats, setStats] = useState<UserStats | null>(null)
-  const [recentIdeas, setRecentIdeas] = useState<Idea[]>([])
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [achievements, setAchievements] = useState<Achievement[]>([])
+  const [authUser, setAuthUser] = useState<AuthUser | null>(null)
+  const [ideas, setIdeas] = useState<Idea[]>([])
+  const [recentProgress, setRecentProgress] = useState<Record<string, ReturnType<typeof phaseProgress>>>({})
+  const [nextAction, setNextAction] = useState<NextAction | null>(null)
+  const [competitorNudge, setCompetitorNudge] = useState<{ id: string; title: string } | null>(null)
+  const [xp, setXp] = useState(0)
+  const [level, setLevel] = useState(1)
 
   async function load() {
     try {
       setLoading(true)
       setError(null)
-      const [prof, userStats, ideasData, notifs, ach] = await Promise.all([
-        UserAPI.getProfile(),
-        UserAPI.getStats(),
-        IdeaAPI.getIdeas({ limit: 6, sort_by: 'updated_at', sort_order: 'desc' }),
-        NotificationAPI.getNotifications(false),
-        AchievementAPI.getUserAchievements().catch(() => []),
+      const [me, stats, ideasData] = await Promise.all([
+        AuthAPI.getMe(),
+        import('@/lib/api/user').then(m => m.UserAPI.getStats()).catch(() => null),
+        IdeaAPI.getIdeas({ limit: 20, sort_by: 'updated_at', sort_order: 'desc' }),
       ])
-      setProfile(prof)
-      setStats(userStats)
-      setRecentIdeas(ideasData.ideas)
-      setNotifications(notifs.notifications.slice(0, 4))
-      setAchievements(ach.slice(0, 3))
+      setAuthUser(me)
+      setIdeas(ideasData.ideas)
+      setXp(stats?.total_xp ?? 0)
+      setLevel(stats?.current_level ?? 1)
+
+      const recent = ideasData.ideas.slice(0, 3)
+      const progressPairs = await Promise.all(
+        recent.map(async idea => {
+          const phases = await PhaseAPI.getPhases(idea.id).catch(() => [])
+          return [idea.id, phaseProgress(phases)] as const
+        }),
+      )
+      setRecentProgress(Object.fromEntries(progressPairs))
+
+      const activeIdeas = ideasData.ideas.filter(i => !i.is_archived && i.status !== 'archived')
+      const nudgeChecks = await Promise.all(
+        activeIdeas.slice(0, 12).map(async idea => {
+          const comp = await import('@/lib/api/idea').then(m =>
+            m.CompetitorAPI.getCompetitorResearch(idea.id).catch(() => ({ research: [] })),
+          )
+          const count = ((comp.research || comp.competitors || []) as unknown[]).length
+          return { idea, count }
+        }),
+      )
+      const withoutResearch = nudgeChecks.find(x => x.count === 0)
+      setCompetitorNudge(withoutResearch ? { id: withoutResearch.idea.id, title: withoutResearch.idea.title } : null)
+
+      const topIdea = ideasData.ideas[0]
+      if (!topIdea) {
+        setNextAction(null)
+      } else {
+        const [detail, comp] = await Promise.all([
+          IdeaAPI.getIdea(topIdea.id),
+          import('@/lib/api/idea').then(m => m.CompetitorAPI.getCompetitorResearch(topIdea.id)).catch(() => ({ research: [] })),
+        ])
+        const gapRun = getGapRunMap()[topIdea.id]
+        const competitors = (comp.research || comp.competitors || []) as unknown[]
+        if ((detail.features?.length ?? 0) === 0) {
+          setNextAction({
+            label: 'Generate features',
+            detail: `${topIdea.title} has no features yet.`,
+            cta: 'Generate now',
+            run: () => router.push(routes.ideaTab(topIdea.id, 'overview')),
+          })
+        } else if ((detail.phases?.length ?? 0) === 0) {
+          setNextAction({
+            label: 'Build roadmap',
+            detail: `${topIdea.title} has no phases yet.`,
+            cta: 'Create phases',
+            run: () => router.push(routes.ideaTab(topIdea.id, 'roadmap')),
+          })
+        } else if (competitors.length === 0) {
+          setNextAction({
+            label: 'Run competitor research',
+            detail: `${topIdea.title} has no competitor research yet.`,
+            cta: 'Open competitors',
+            run: () => router.push(routes.competitorsForIdea(topIdea.id)),
+          })
+        } else if (!gapRun) {
+          setNextAction({
+            label: 'Analyze market gap',
+            detail: `${topIdea.title} has no recent market gap analysis.`,
+            cta: 'Run analysis',
+            run: async () => {
+              await IdeaAPI.marketGapAnalysis(topIdea.id).catch(() => undefined)
+              saveGapRun(topIdea.id)
+              router.push(routes.gaps)
+            },
+          })
+        } else {
+          setNextAction({
+            label: 'Continue building',
+            detail: `${topIdea.title} is ready for the next execution step.`,
+            cta: 'Open idea',
+            run: () => router.push(routes.idea(topIdea.id)),
+          })
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard')
     } finally {
@@ -71,45 +142,20 @@ export default function DashboardHome() {
     load()
   }, [])
 
-  const now = new Date()
-  const dow = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][now.getDay()]
-  const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][now.getMonth()]
-  const name = displayName(profile?.email, profile?.display_name)
-
-  const statCards = stats ? [
-    { label: 'Total ideas', icon: <DI.Bulb/>, value: String(stats.ideas_created ?? 0), delta: `${stats.ideas_completed ?? 0} completed`, spark: [2, 4, 6, 8, 10, 12, stats.ideas_created ?? 0] },
-    { label: 'Current level', icon: <DI.Trend/>, value: String(stats.current_level ?? 1), delta: `${stats.total_xp ?? 0} XP`, spark: [1, 1, 2, 2, 3, stats.current_level ?? 1, stats.current_level ?? 1] },
-    { label: 'Current streak', icon: <DI.Target/>, value: `${stats.current_streak ?? 0}d`, delta: `best ${stats.longest_streak ?? 0}d`, spark: [0, 1, 2, 3, stats.current_streak ?? 0, stats.current_streak ?? 0, stats.current_streak ?? 0] },
-    { label: 'AI applied', icon: <DI.Sparkles/>, value: String(stats.ai_suggestions_applied ?? 0), delta: 'suggestions used', spark: [0, 1, 2, 4, 6, 8, stats.ai_suggestions_applied ?? 0] },
-  ] : []
+  const name = displayName(authUser?.email, undefined)
+  const recentIdeas = useMemo(() => ideas.slice(0, 3), [ideas])
 
   return (
     <div className="page">
-      <div className="hello">
-        <div className="hello-grid"/>
-        <div className="hello-inner">
-          <div>
-            <div className="hello-now">
-              <span className="pulse"/>
-              {dow}, {mon} {now.getDate()} · {now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </div>
-            <h1>Welcome back, <em>{name}</em>.</h1>
-            <div className="h-sub">
-              {loading ? 'Syncing your workspace…' : (
-                <>
-                  <b>{stats?.ideas_created ?? 0} ideas</b> in your lab.
-                  {notifications.length > 0 && (
-                    <> <b>{notifications.length}</b> recent notifications from Copilot.</>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-          <div className="hello-actions">
-            <button className="btn-sm solid" onClick={() => router.push(routes.newIdea)}><DI.Plus/> New idea</button>
-            <button className="btn-sm ghost" onClick={() => router.push(routes.copilot)}><DI.Spark/> Ask Copilot</button>
-            <button className="btn-sm ghost" onClick={() => router.push(routes.competitors)}><DI.Radar/> Competitors</button>
-          </div>
+      <div className="page-head">
+        <div>
+          <div className="ph-eyebrow">Dashboard</div>
+          <h1>Welcome back, <em>{name}</em>.</h1>
+          <div className="ph-sub">Focused workspace for what to do next, not vanity metrics.</div>
+        </div>
+        <div className="page-head-actions">
+          <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}><DI.Plus/> New idea</button>
+          <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideas)}>View all ideas</button>
         </div>
       </div>
 
@@ -119,58 +165,56 @@ export default function DashboardHome() {
 
       {!loading && !error && (
       <>
-      <div className="founder-progress dash-card">
-        <div className="founder-progress-main">
-          <div className="founder-progress-ring">L{stats?.current_level ?? 1}</div>
-          <div>
-            <p className="founder-progress-title">Founder progress</p>
-            <p className="founder-progress-meta">
-              {stats?.total_xp ?? 0} XP · {stats?.current_streak ?? 0} day streak · {stats?.ideas_created ?? 0} ideas captured
-            </p>
+      {competitorNudge && (
+        <div className="dash-card competitor-nudge" style={{ marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <div>
+              <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Competitor intelligence</div>
+              <h3 style={{ fontSize: 18, fontWeight: 400, letterSpacing: '-0.02em', marginBottom: 4 }}>
+                You haven&apos;t researched competitors for <em>{competitorNudge.title}</em> yet.
+              </h3>
+              <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>Discover who you&apos;re up against and compare features in one workspace.</p>
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button type="button" className="btn-sm solid" onClick={() => router.push(routes.competitorsForIdea(competitorNudge.id))}>
+                <DI.Radar /> Start now
+              </button>
+              <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideaTab(competitorNudge.id, 'intelligence'))}>
+                Open intelligence tab
+              </button>
+            </div>
           </div>
         </div>
-        {achievements.length > 0 ? (
-          <div className="founder-progress-achievements">
-            {achievements.map(a => (
-              <span key={a.id} className="founder-achievement-pill" title={a.description}>
-                {a.title}
-              </span>
-            ))}
+      )}
+      <div className="dash-card" style={{ marginBottom: 20 }}>
+        <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Recommended next step</div>
+        {nextAction ? (
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ fontSize: 20, fontWeight: 400, letterSpacing: '-0.02em', marginBottom: 4 }}>{nextAction.label}</h3>
+              <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>{nextAction.detail}</p>
+            </div>
+            <button type="button" className="btn-sm solid" onClick={nextAction.run}>{nextAction.cta}</button>
           </div>
         ) : (
-          <span className="founder-achievement-pill">Keep building to unlock milestones</span>
+          <PageEmpty
+            icon={<DI.Bulb />}
+            title="Capture your first idea"
+            description="Create an idea and we'll suggest the best next action here."
+            action={<button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}><DI.Plus /> New idea</button>}
+          />
         )}
       </div>
 
       <div className="section-block">
         <div className="section-block-head">
-          <h2>This <em>week</em>, at a glance</h2>
-          <span className="sb-sub">from your account stats</span>
-        </div>
-        <div className="stats">
-          {statCards.map(s => (
-            <div key={s.label} className="stat">
-              <div className="s-label">{s.icon} {s.label}</div>
-              <div className="s-value">{s.value}</div>
-              <div className="s-delta"><DI.Up/> {s.delta}</div>
-              <Spark className="s-spark" data={s.spark} />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="section-block">
-        <div className="section-block-head">
           <h2>Recent <em>ideas</em></h2>
-          <a className="sb-link" onClick={() => router.push(routes.ideas)} style={{ cursor: 'pointer' }}>
-            View all {stats?.ideas_created ?? recentIdeas.length} →
-          </a>
         </div>
         {recentIdeas.length === 0 ? (
           <PageEmpty
             icon={<DI.Bulb />}
             title="No ideas yet"
-            description="Start a conversation with Copilot or add your first idea."
+            description="Create your first idea to begin the guided founder flow."
             action={
               <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
                 <DI.Plus /> New idea
@@ -181,20 +225,24 @@ export default function DashboardHome() {
           <div className="ideas-grid">
             {recentIdeas.map(i => {
               const badge = statusBadge(i.status)
-              const score = ideaScore(i)
+              const progress = recentProgress[i.id] ?? { total: 0, completed: 0, percent: 0 }
               return (
-                <div key={i.id} className="idea" onClick={() => router.push(routes.idea(i.id))}>
+                <div key={i.id} className="idea">
                   <div className="i-row1">
                     <span className={`i-tag ${badge.kind}`}>{badge.text}</span>
-                    <span className="i-score">score · <b>{score}</b></span>
+                    <span className="i-score">phases · <b>{progress.completed}/{progress.total}</b></span>
                   </div>
                   <h3>{i.title}</h3>
                   <p className="i-desc">{i.description || 'No description yet.'}</p>
-                  <div className="i-prog"><div className="bar" style={{ width: `${i.progress_percentage}%` }}/></div>
+                  <div className="i-prog"><div className="bar" style={{ width: `${progress.percent}%` }}/></div>
                   <div className="i-foot">
-                    <div className="tags">{(i.tags || []).slice(0, 3).map(t => <span key={t}>{t}</span>)}</div>
+                    <span>{progress.percent}% roadmap progress</span>
                     <span className="sep"/>
                     <span>{timeAgo(i.updated_at)}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <button type="button" className="btn-sm solid" onClick={() => router.push(routes.idea(i.id))}>Continue</button>
+                    <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideaTab(i.id, 'overview'))}>Overview</button>
                   </div>
                 </div>
               )
@@ -203,36 +251,19 @@ export default function DashboardHome() {
         )}
       </div>
 
-      <div className="section-block">
-        <div className="section-block-head">
-          <h2>Recent <em>notifications</em></h2>
-          <span className="sb-sub">from Copilot & workspace</span>
-        </div>
-        {notifications.length === 0 ? (
-          <PageEmpty
-            icon={<DI.Bell />}
-            title="No notifications yet"
-            description="Copilot and workspace events will appear here."
-            action={
-              <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.notifications)}>
-                Open notifications
-              </button>
-            }
-          />
-        ) : (
-          <div className="insights">
-            {notifications.map(n => (
-              <div key={n.id} className={`insight ${n.is_read ? '' : 'accent'}`}>
-                <span className="i-kind"><DI.Bell/> {n.type}</span>
-                <h4>{n.title}</h4>
-                <p>{n.message}</p>
-                <div className="i-meta">
-                  <span>{timeAgo(n.created_at)}</span>
-                </div>
-              </div>
-            ))}
+      <div className="dash-card founder-progress">
+        <div className="founder-progress-main">
+          <div className="founder-progress-ring">L{level}</div>
+          <div>
+            <p className="founder-progress-title">Founder Progress</p>
+            <p className="founder-progress-meta">{xp} XP · level {level}</p>
           </div>
-        )}
+        </div>
+        <div className="founder-progress-achievements">
+          <span className="founder-achievement-pill">{ideas.length} ideas tracked</span>
+          <span className="founder-achievement-pill">{recentIdeas.filter(i => i.status === 'in_progress').length} active ideas</span>
+          <span className="founder-achievement-pill">{recentIdeas.length} recently updated</span>
+        </div>
       </div>
       </>
       )}

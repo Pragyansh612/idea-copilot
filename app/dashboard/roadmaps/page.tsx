@@ -112,7 +112,7 @@ export default function RoadmapsPage() {
                   <button
                     type="button"
                     className="btn-sm solid"
-                    onClick={() => router.push(routes.ideaTab(idea.id, 'phases'))}
+                    onClick={() => router.push(routes.ideaTab(idea.id, 'roadmap'))}
                   >
                     Open roadmap
                   </button>

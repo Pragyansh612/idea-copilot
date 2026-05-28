@@ -18,7 +18,13 @@ import { timeAgo } from '@/lib/dashboard/format'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
-const CP_SUGGESTIONS = ['Score my top idea', 'Suggest MVP features', 'Find market gaps', 'Draft a 4-week beta plan', 'Compare competitors']
+const GENERIC_SUGGESTIONS = [
+  'Generate MVP plan',
+  'Find market gaps',
+  'Improve my roadmap',
+  'Analyze competitors',
+  'Validate my idea',
+]
 
 type Message = { id: string; role: 'user' | 'ai'; content: string; display?: string }
 
@@ -158,6 +164,14 @@ function CopilotPageInner() {
   }
 
   const contextIdea = ideas.find(i => i.id === selectedIdeaId)
+  const cpSuggestions = contextIdea
+    ? [
+        `Generate features for ${contextIdea.title}`,
+        `Who are the competitors of ${contextIdea.title}`,
+        `What is the market gap for ${contextIdea.title}`,
+        `Create a go-to-market plan for ${contextIdea.title}`,
+      ]
+    : GENERIC_SUGGESTIONS
 
   return (
     <div className="page page-narrow">
@@ -258,8 +272,8 @@ function CopilotPageInner() {
           </div>
 
           <div className="cp-suggestions">
-            {CP_SUGGESTIONS.map(s => (
-              <button key={s} type="button" className="cp-sugg" onClick={() => sendMessage(s)} disabled={sending}>{s}</button>
+            {cpSuggestions.map(s => (
+              <button key={s} type="button" className="cp-sugg" onClick={() => setDraft(s)} disabled={sending}>{s}</button>
             ))}
           </div>
 
