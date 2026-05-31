@@ -39,3 +39,24 @@ export function loadGapsForIdea(ideaId: string): GapItem[] {
 export function hasGapRun(ideaId: string): boolean {
   return getGapRunMap()[ideaId] === true || loadGapsForIdea(ideaId).length > 0
 }
+
+/** Total opportunity count stored across all ideas (for workspace stats). */
+export function countStoredGapOpportunities(): number {
+  if (typeof window === 'undefined') return 0
+  let total = 0
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (!key?.startsWith(DATA_PREFIX)) continue
+      const gaps = normalizeGaps(JSON.parse(localStorage.getItem(key) || '[]'))
+      total += gaps.length
+    }
+  } catch {
+    return getGapRunCount()
+  }
+  return total || getGapRunCount()
+}
+
+function getGapRunCount(): number {
+  return Object.values(getGapRunMap()).filter(Boolean).length
+}

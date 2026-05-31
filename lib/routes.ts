@@ -20,6 +20,7 @@ export const routes = {
   ideaAttachments: (id: string) => `/dashboard/ideas/${id}?tab=attachments`,
   competitors: '/dashboard/competitors',
   competitorsForIdea: (id: string) => `/dashboard/competitors?idea=${id}`,
+  competitorsDiscover: (id: string) => `/dashboard/competitors?idea=${encodeURIComponent(id)}&discover=1`,
   gaps: '/dashboard/gaps',
   roadmaps: '/dashboard/roadmaps',
   notifications: '/dashboard/notifications',

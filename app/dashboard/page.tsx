@@ -105,8 +105,8 @@ export default function DashboardHome() {
           setNextAction({
             label: 'Run competitor research',
             detail: `${topIdea.title} has no competitor research yet.`,
-            cta: 'Open competitors',
-            run: () => router.push(routes.competitorsForIdea(topIdea.id)),
+            cta: 'Discover competitors',
+            run: () => router.push(routes.competitorsDiscover(topIdea.id)),
           })
         } else if (!gapRun) {
           setNextAction({
@@ -174,7 +174,7 @@ export default function DashboardHome() {
               <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>Discover who you&apos;re up against and compare features in one workspace.</p>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" className="btn-sm solid" onClick={() => router.push(routes.competitorsForIdea(competitorNudge.id))}>
+              <button type="button" className="btn-sm solid" onClick={() => router.push(routes.competitorsDiscover(competitorNudge.id))}>
                 <DI.Radar /> Discover competitors
               </button>
               <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.competitorsForIdea(competitorNudge.id))}>

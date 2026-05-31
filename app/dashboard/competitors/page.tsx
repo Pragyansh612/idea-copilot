@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { CompetitorFeatureMatrix } from '@/components/dashboard/CompetitorFeatureMatrix'
 import { MarketPositionMap } from '@/components/dashboard/MarketPositionMap'
@@ -57,6 +57,7 @@ function CompetitorsContent() {
   const [insightsLoading, setInsightsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const discoverOnce = useRef(false)
 
   const syncIdeaInUrl = useCallback((ideaId: string) => {
     router.replace(routes.competitorsForIdea(ideaId), { scroll: false })
@@ -178,21 +179,6 @@ function CompetitorsContent() {
     if (selectedIdeaId) loadIdeaIntel(selectedIdeaId)
   }, [selectedIdeaId, loadIdeaIntel])
 
-  const selectedIdea = useMemo(
-    () => ideas.find(i => i.id === selectedIdeaId),
-    [ideas, selectedIdeaId],
-  )
-
-  const matrix = useMemo(
-    () => buildFeatureMatrix(yourFeatures, competitors, featuresByCompetitor),
-    [yourFeatures, competitors, featuresByCompetitor],
-  )
-
-  const positionPoints = useMemo(
-    () => buildPositionMap(yourFeatures, competitors, featuresByCompetitor),
-    [yourFeatures, competitors, featuresByCompetitor],
-  )
-
   async function discoverCompetitors() {
     if (!selectedIdeaId) return
     try {
@@ -208,6 +194,28 @@ function CompetitorsContent() {
       setBusyAction(null)
     }
   }
+
+  useEffect(() => {
+    if (searchParams.get('discover') !== '1' || !selectedIdeaId || ideasLoading || discoverOnce.current) return
+    discoverOnce.current = true
+    router.replace(routes.competitorsForIdea(selectedIdeaId), { scroll: false })
+    void discoverCompetitors()
+  }, [searchParams, selectedIdeaId, ideasLoading, router])
+
+  const selectedIdea = useMemo(
+    () => ideas.find(i => i.id === selectedIdeaId),
+    [ideas, selectedIdeaId],
+  )
+
+  const matrix = useMemo(
+    () => buildFeatureMatrix(yourFeatures, competitors, featuresByCompetitor),
+    [yourFeatures, competitors, featuresByCompetitor],
+  )
+
+  const positionPoints = useMemo(
+    () => buildPositionMap(yourFeatures, competitors, featuresByCompetitor),
+    [yourFeatures, competitors, featuresByCompetitor],
+  )
 
   async function analyzeCompetitor(c: CompetitorRow) {
     if (!selectedIdeaId) return

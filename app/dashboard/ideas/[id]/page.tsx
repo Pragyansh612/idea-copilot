@@ -22,6 +22,7 @@ import { Toast } from '@/components/dashboard/Toast'
 import { normalizeGaps, type GapItem } from '@/lib/dashboard/gaps'
 import { hasGapRun, loadGapsForIdea, saveGapsForIdea } from '@/lib/dashboard/gap-storage'
 import { suggestionBody, suggestionItemType } from '@/lib/dashboard/suggestions'
+import { buildReadinessItems } from '@/lib/dashboard/readiness'
 import { formatDate, ideaScore, priorityShort, statusLabel, timeAgo } from '@/lib/dashboard/format'
 import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext'
 import { routes } from '@/lib/routes'
@@ -63,6 +64,8 @@ function IdeaDetailContent() {
   const [marketGapDone, setMarketGapDone] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [exportBusy, setExportBusy] = useState<'markdown' | 'pdf' | null>(null)
+  const [editingDescription, setEditingDescription] = useState(false)
+  const [descriptionDraft, setDescriptionDraft] = useState('')
   const { setIdeaDetailTitle } = useDashboardChrome()
 
   useEffect(() => {
@@ -117,6 +120,7 @@ function IdeaDetailContent() {
       ])
       setIdea(detail.idea)
       setIdeaDetailTitle(detail.idea.title)
+      setDescriptionDraft(detail.idea.description || '')
       setFeatures(detail.features || [])
       setPhases(detail.phases || [])
       setSuggestions(sugs)
@@ -324,6 +328,22 @@ function IdeaDetailContent() {
     }
   }
 
+  async function saveDescription() {
+    const text = descriptionDraft.trim()
+    if (!text) return
+    try {
+      setBusyAction('description')
+      const updated = await IdeaAPI.updateIdea(ideaId, { description: text })
+      setIdea(updated)
+      setEditingDescription(false)
+      setToast('Description saved.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save description')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   async function sendCopilot(message?: string) {
     const text = (message ?? copilotInput).trim()
     if (!text) return
@@ -369,35 +389,29 @@ function IdeaDetailContent() {
   }
 
   const score = ideaScore(idea)
-  const readiness = [
-    { label: 'Idea described', done: Boolean(idea.description?.trim()), action: () => setTab('overview') },
-    {
-      label: 'Features added',
-      done: features.length > 0,
-      action: () => {
-        setTab('overview')
-        setSuggestionType('features')
-        void generateSuggestions()
-      },
+  const readiness = buildReadinessItems({
+    hasDescription: Boolean(idea.description?.trim()),
+    hasFeatures: features.length > 0,
+    hasPhases: phases.length > 0,
+    hasCompetitors: competitors.length > 0,
+    hasMarketGap: marketGapAnalyzed,
+    onDescribe: () => {
+      setTab('overview')
+      setDescriptionDraft(idea.description || '')
+      setEditingDescription(true)
     },
-    { label: 'Roadmap created', done: phases.length > 0, action: () => setTab('roadmap') },
-    {
-      label: 'Competitors researched',
-      done: competitors.length > 0,
-      action: () => {
-        setTab('intelligence')
-        void discoverCompetitors()
-      },
+    onGenerateFeatures: () => {
+      setTab('overview')
+      setSuggestionType('features')
+      void generateSuggestions()
     },
-    {
-      label: 'Market gap analyzed',
-      done: marketGapAnalyzed,
-      action: () => {
-        setTab('intelligence')
-        void runMarketGapAnalysis()
-      },
+    onCreateRoadmap: () => setTab('roadmap'),
+    onDiscoverCompetitors: () => router.push(routes.competitorsDiscover(ideaId)),
+    onRunMarketGap: () => {
+      setTab('intelligence')
+      void runMarketGapAnalysis()
     },
-  ]
+  })
   const copilotPrompts = [
     `Generate features for ${idea.title}`,
     `Find market gaps for ${idea.title}`,
@@ -553,12 +567,32 @@ function IdeaDetailContent() {
                           {item.label}
                         </span>
                         {!item.done && (
-                          <button type="button" className="btn-sm ghost" onClick={item.action}>Fix</button>
+                          <button type="button" className="btn-sm ghost" onClick={item.action}>{item.cta}</button>
                         )}
                       </div>
                     ))}
                   </div>
                 </div>
+                {(editingDescription || !idea.description?.trim()) && (
+                  <div className="dash-card" style={{ padding: 12 }} id="idea-description">
+                    <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Idea description</div>
+                    <textarea
+                      value={descriptionDraft}
+                      onChange={e => setDescriptionDraft(e.target.value)}
+                      rows={4}
+                      placeholder="Describe the problem, audience, and solution…"
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--bg-2)', color: 'var(--fg)', font: 'inherit', fontSize: 14, resize: 'vertical' }}
+                    />
+                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                      <button type="button" className="btn-sm solid" onClick={() => void saveDescription()} disabled={busyAction === 'description' || !descriptionDraft.trim()}>
+                        {busyAction === 'description' ? 'Saving…' : 'Save description'}
+                      </button>
+                      {idea.description?.trim() && (
+                        <button type="button" className="btn-sm ghost" onClick={() => setEditingDescription(false)}>Cancel</button>
+                      )}
+                    </div>
+                  </div>
+                )}
                 <div className="dash-card" style={{ padding: 12 }}>
                   <div className="eyebrow-mono" style={{ marginBottom: 10 }}>Generate AI Suggestions</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
@@ -566,7 +600,7 @@ function IdeaDetailContent() {
                       {SUGGESTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                     <button type="button" className="btn-sm solid" onClick={generateSuggestions} disabled={busyAction === 'suggest'}>
-                      <DI.Sparkles /> {busyAction === 'suggest' ? 'Generating…' : 'Generate'}
+                      <DI.Sparkles /> {busyAction === 'suggest' ? 'Generating…' : 'Generate AI Suggestions'}
                     </button>
                   </div>
                   {suggestions.length === 0 ? (
@@ -682,27 +716,19 @@ function IdeaDetailContent() {
                 </p>
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <button type="button" className="btn-sm solid" onClick={() => router.push(routes.competitorsForIdea(ideaId))}>
-                    <DI.Radar /> Open intelligence workspace
+                    <DI.Radar /> View competitors
                   </button>
-                  <button type="button" className="btn-sm ghost" onClick={discoverCompetitors} disabled={busyAction === 'discover'}>
+                  <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.competitorsDiscover(ideaId))} disabled={busyAction === 'discover'}>
                     <DI.Radar /> {busyAction === 'discover' ? 'Discovering…' : 'Discover competitors'}
                   </button>
                 </div>
               </div>
               <div className="dash-card" style={{ padding: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-                  <div className="eyebrow-mono">Competitors</div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <button type="button" className="btn-sm solid" onClick={discoverCompetitors} disabled={busyAction === 'discover'}>
-                      <DI.Radar /> {busyAction === 'discover' ? 'Discovering…' : 'Discover Competitors'}
-                    </button>
-                    <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.competitorsForIdea(ideaId))}>
-                      <DI.Radar /> View Competitors
-                    </button>
-                    <button type="button" className="btn-sm ghost" onClick={runCompetitorAnalysis} disabled={busyAction === 'comp-analysis'}>
-                      <DI.Sparkles /> {busyAction === 'comp-analysis' ? 'Analyzing…' : 'Run Analysis'}
-                    </button>
-                  </div>
+                  <div className="eyebrow-mono">Competitors · {competitors.length}</div>
+                  <button type="button" className="btn-sm ghost" onClick={runCompetitorAnalysis} disabled={busyAction === 'comp-analysis'}>
+                    <DI.Sparkles /> {busyAction === 'comp-analysis' ? 'Analyzing…' : 'Run strategy analysis'}
+                  </button>
                 </div>
                 {competitors.length === 0 ? (
                   <p style={{ color: 'var(--fg-2)' }}>No competitor research yet.</p>

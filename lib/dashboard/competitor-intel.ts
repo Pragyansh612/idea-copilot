@@ -1,4 +1,5 @@
 import type { Feature } from '@/lib/api/idea'
+import { countStoredGapOpportunities } from '@/lib/dashboard/gap-storage'
 
 export type CompetitorRow = Record<string, unknown>
 
@@ -76,16 +77,6 @@ export function isCompetitorAnalyzed(c: CompetitorRow): boolean {
   return Boolean(c.market_position || c.description)
 }
 
-export function getGapRunCount(): number {
-  if (typeof window === 'undefined') return 0
-  try {
-    const map = JSON.parse(localStorage.getItem('ic-gap-runs') || '{}') as Record<string, boolean>
-    return Object.values(map).filter(Boolean).length
-  } catch {
-    return 0
-  }
-}
-
 export function computeWorkspaceStats(
   competitorsByIdea: Record<string, CompetitorRow[]>,
   featureCountByCompetitor: Record<string, number>,
@@ -97,7 +88,7 @@ export function computeWorkspaceStats(
     tracked: all.length,
     analyzed,
     featuresExtracted,
-    marketGapsFound: getGapRunCount(),
+    marketGapsFound: countStoredGapOpportunities(),
   }
 }
 
