@@ -38,44 +38,43 @@ export function CompetitorFeatureMatrix({ matrix, loading }: Props) {
         <span>Feature comparison matrix</span>
         <span className="live">live data</span>
       </div>
-      <div
-        className="fm-grid"
-        style={{ gridTemplateColumns: `1.4fr repeat(${colCount}, minmax(72px, 1fr))` }}
-      >
-        <div className="fm-cell head row-head">Feature</div>
-        {matrix.columns.map(col => (
-          <div key={col.id} className={`fm-cell head ${col.isYou ? 'you' : ''}`}>
-            {col.label}
-          </div>
-        ))}
-        {matrix.rows.map(row => {
-          const isDiff = matrix.differentiators.includes(row)
-          const isGap = matrix.gaps.includes(row)
-          return (
-            <Fragment key={row}>
-              <div
-                className="fm-cell row-head"
-                style={{
-                  background: isDiff
-                    ? 'color-mix(in srgb, var(--accent) 8%, transparent)'
-                    : isGap
-                      ? 'color-mix(in srgb, var(--warn) 8%, transparent)'
-                      : undefined,
-                }}
-              >
-                {row}
-              </div>
-              {matrix.columns.map(col => {
-                const has = Boolean(matrix.cells[row]?.[col.id])
-                return (
-                  <div key={`${row}-${col.id}`} className="fm-cell">
-                    {has ? <span className="y" aria-label="yes">✓</span> : <span className="n" aria-label="no">✕</span>}
-                  </div>
-                )
-              })}
-            </Fragment>
-          )
-        })}
+      <div className="fm-scroll">
+        <div
+          className="fm-grid"
+          style={{ gridTemplateColumns: `minmax(140px, 1.4fr) repeat(${colCount}, minmax(72px, 1fr))` }}
+        >
+          <div className="fm-cell head row-head">Feature</div>
+          {matrix.columns.map(col => (
+            <div key={col.id} className={`fm-cell head ${col.isYou ? 'you' : ''}`}>
+              {col.label}
+            </div>
+          ))}
+          {matrix.rows.map(row => {
+            const isDiff = matrix.differentiators.includes(row)
+            const isGap = matrix.gaps.includes(row)
+            return (
+              <Fragment key={row}>
+                <div
+                  className={`fm-cell row-head ${isDiff ? 'fm-diff' : isGap ? 'fm-gap' : ''}`}
+                >
+                  {row}
+                </div>
+                {matrix.columns.map(col => {
+                  const has = Boolean(matrix.cells[row]?.[col.id])
+                  return (
+                    <div key={`${row}-${col.id}`} className="fm-cell">
+                      {has ? <span className="y" aria-label="yes">✓</span> : <span className="n" aria-label="no">✕</span>}
+                    </div>
+                  )
+                })}
+              </Fragment>
+            )
+          })}
+        </div>
+      </div>
+      <div className="fm-legend">
+        <span className="fm-legend-item fm-diff">Your differentiators</span>
+        <span className="fm-legend-item fm-gap">Competitor gaps for you</span>
       </div>
       <div className="fm-summary">
         <p>

@@ -675,6 +675,20 @@ function IdeaDetailContent() {
           {tab === 'intelligence' && (
             <div className="id-panel">
               <div className="id-panel-head"><h3>Intelligence</h3></div>
+              <div className="dash-card ci-intel-banner" style={{ padding: 14, marginBottom: 12 }}>
+                <div className="eyebrow-mono" style={{ marginBottom: 6 }}>Full intelligence workspace</div>
+                <p style={{ color: 'var(--fg-2)', fontSize: 14, marginBottom: 12 }}>
+                  Compare features side-by-side, view market positioning, and generate strategic insights on the Competitors page.
+                </p>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <button type="button" className="btn-sm solid" onClick={() => router.push(routes.competitorsForIdea(ideaId))}>
+                    <DI.Radar /> Open intelligence workspace
+                  </button>
+                  <button type="button" className="btn-sm ghost" onClick={discoverCompetitors} disabled={busyAction === 'discover'}>
+                    <DI.Radar /> {busyAction === 'discover' ? 'Discovering…' : 'Discover competitors'}
+                  </button>
+                </div>
+              </div>
               <div className="dash-card" style={{ padding: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
                   <div className="eyebrow-mono">Competitors</div>

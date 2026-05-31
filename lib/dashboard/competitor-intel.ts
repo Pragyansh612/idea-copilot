@@ -53,6 +53,19 @@ export function competitorDescription(c: CompetitorRow): string {
   return String(c.description || c.market_position || '')
 }
 
+export function competitorId(c: CompetitorRow, idx = 0): string {
+  const id = c.id != null ? String(c.id) : ''
+  if (id && id !== 'undefined') return id
+  return `c-${idx}`
+}
+
+/** Real DB id for API calls — null when not persisted yet. */
+export function competitorApiId(c: CompetitorRow): string | null {
+  const id = c.id != null ? String(c.id) : ''
+  if (!id || id === 'undefined') return null
+  return id
+}
+
 export function isCompetitorAnalyzed(c: CompetitorRow): boolean {
   const strengths = c.strengths as unknown[] | undefined
   const weaknesses = c.weaknesses as unknown[] | undefined
@@ -97,7 +110,7 @@ export function buildFeatureMatrix(
   const columns: FeatureMatrix['columns'] = [
     { id: 'you', label: 'You', isYou: true },
     ...competitors.map((c, idx) => ({
-      id: String(c.id || `c-${idx}`),
+      id: competitorId(c, idx),
       label: competitorDisplayName(c, idx).slice(0, 18),
     })),
   ]
@@ -107,13 +120,13 @@ export function buildFeatureMatrix(
     const k = normFeatureName(f.title)
     if (!nameMap.has(k)) nameMap.set(k, f.title)
   }
-  for (const comp of competitors) {
-    const cid = String(comp.id)
+  competitors.forEach((comp, idx) => {
+    const cid = competitorId(comp, idx)
     for (const cf of featuresByCompetitor[cid] || []) {
       const k = normFeatureName(cf.feature_name)
       if (!nameMap.has(k)) nameMap.set(k, cf.feature_name)
     }
-  }
+  })
 
   const rows = [...nameMap.values()].sort((a, b) => a.localeCompare(b))
   const cells: FeatureMatrix['cells'] = {}
@@ -121,13 +134,13 @@ export function buildFeatureMatrix(
   for (const row of rows) {
     const key = normFeatureName(row)
     cells[row] = { you: youNames.has(key) }
-    for (const comp of competitors) {
-      const cid = String(comp.id)
+    competitors.forEach((comp, idx) => {
+      const cid = competitorId(comp, idx)
       const has = (featuresByCompetitor[cid] || []).some(
         cf => normFeatureName(cf.feature_name) === key,
       )
       cells[row][cid] = has
-    }
+    })
   }
 
   const differentiators: string[] = []
@@ -135,7 +148,7 @@ export function buildFeatureMatrix(
   for (const row of rows) {
     const rowCells = cells[row]
     const youHave = Boolean(rowCells.you)
-    const anyComp = competitors.some(c => rowCells[String(c.id)])
+    const anyComp = competitors.some((c, idx) => rowCells[competitorId(c, idx)])
     if (youHave && !anyComp) differentiators.push(row)
     if (!youHave && anyComp) gaps.push(row)
   }
@@ -154,7 +167,7 @@ export function buildPositionMap(
 ): PositionPoint[] {
   const maxCompetitorFeatures = Math.max(
     1,
-    ...competitors.map(c => (featuresByCompetitor[String(c.id)] || []).length),
+    ...competitors.map((c, idx) => (featuresByCompetitor[competitorId(c, idx)] || []).length),
   )
 
   const youCoverage = Math.min(100, (yourFeatures.length / maxCompetitorFeatures) * 70 + 20)
@@ -167,7 +180,7 @@ export function buildPositionMap(
   ]
 
   competitors.forEach((c, idx) => {
-    const cid = String(c.id)
+    const cid = competitorId(c, idx)
     const feats = featuresByCompetitor[cid] || []
     const coverage = Math.min(100, (feats.length / maxCompetitorFeatures) * 70 + 15)
     const innovation = feats.some(f => hasAiSignal(`${f.feature_name} ${f.description || ''}`))
@@ -186,10 +199,17 @@ export function buildPositionMap(
 
 export function parseStrategicInsights(text: string): StrategicSection[] {
   const sections: StrategicSection[] = []
-  const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+  const lines = text.split('\n').map(l => l.trim().replace(/\*\*/g, '')).filter(Boolean)
   let current: StrategicSection | null = null
 
   for (const line of lines) {
+    const mdHeading = line.match(/^#{1,3}\s+(.+)/)
+    if (mdHeading && /weakness|opportunit|differentiator|strength|insight/i.test(mdHeading[1])) {
+      if (current?.items.length) sections.push(current)
+      current = { title: mdHeading[1].replace(/:$/, ''), items: [] }
+      continue
+    }
+
     const heading = line.match(/^(?:#+\s*|\d+\.\s*)?(.{3,80}):?\s*$/i)
     const bullet = line.match(/^(?:[-*•]|\d+\.)\s+(.+)/)
 

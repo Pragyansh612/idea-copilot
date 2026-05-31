@@ -14,11 +14,14 @@ import {
   type Feature,
   type Idea,
 } from '@/lib/api/idea'
+import { Toast } from '@/components/dashboard/Toast'
 import {
   buildFeatureMatrix,
   buildPositionMap,
+  competitorApiId,
   competitorDescription,
   competitorDisplayName,
+  competitorId,
   competitorWebsite,
   computeWorkspaceStats,
   parseStrategicInsights,
@@ -53,6 +56,11 @@ function CompetitorsContent() {
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [insightsLoading, setInsightsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+
+  const syncIdeaInUrl = useCallback((ideaId: string) => {
+    router.replace(routes.competitorsForIdea(ideaId), { scroll: false })
+  }, [router])
 
   const loadWorkspaceAggregates = useCallback(async (ideaList: Idea[]) => {
     const byIdea: Record<string, CompetitorRow[]> = {}
@@ -64,15 +72,15 @@ function CompetitorsContent() {
           const rows = (data.research || data.competitors || []) as CompetitorRow[]
           byIdea[idea.id] = rows
           await Promise.all(
-            rows.map(async c => {
-              const cid = String(c.id)
-              if (!cid || cid === 'undefined') return
+            rows.map(async (c, idx) => {
+              const apiId = competitorApiId(c)
+              if (!apiId) return
               try {
-                const fr = await CompetitorAPI.getCompetitorFeatures(cid)
+                const fr = await CompetitorAPI.getCompetitorFeatures(apiId)
                 const feats = (fr.features || []) as CompetitorFeature[]
-                featCounts[cid] = feats.length
+                featCounts[apiId] = feats.length
               } catch {
-                featCounts[cid] = 0
+                featCounts[apiId] = 0
               }
             }),
           )
@@ -123,28 +131,33 @@ function CompetitorsContent() {
       const featMap: Record<string, CompetitorFeature[]> = {}
       await Promise.all(
         rows.map(async (c, idx) => {
-          const cid = String(c.id)
-          if (!cid || cid === 'undefined') return
+          const apiId = competitorApiId(c)
+          const key = competitorId(c, idx)
+          if (!apiId) {
+            featMap[key] = []
+            return
+          }
           try {
-            const fr = await CompetitorAPI.getCompetitorFeatures(cid)
-            featMap[cid] = (fr.features || []) as CompetitorFeature[]
+            const fr = await CompetitorAPI.getCompetitorFeatures(apiId)
+            featMap[key] = (fr.features || []) as CompetitorFeature[]
           } catch {
-            featMap[cid] = []
+            featMap[key] = []
           }
         }),
       )
       setFeaturesByCompetitor(featMap)
-      setCompetitorsByIdea(prev => {
-        const next = { ...prev, [ideaId]: rows }
-        setFeatureCountByCompetitor(prevCounts => {
-          const counts = { ...prevCounts }
-          for (const [cid, feats] of Object.entries(featMap)) {
-            counts[cid] = feats.length
-          }
-          setWorkspaceStats(computeWorkspaceStats(next, counts))
-          return counts
+      const counts: Record<string, number> = {}
+      for (const [cid, feats] of Object.entries(featMap)) {
+        counts[cid] = feats.length
+      }
+      setFeatureCountByCompetitor(prevCounts => {
+        const merged = { ...prevCounts, ...counts }
+        setCompetitorsByIdea(prev => {
+          const next = { ...prev, [ideaId]: rows }
+          setWorkspaceStats(computeWorkspaceStats(next, merged))
+          return next
         })
-        return next
+        return merged
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load competitor intelligence')
@@ -188,6 +201,7 @@ function CompetitorsContent() {
       await IdeaAPI.discoverCompetitors(selectedIdeaId)
       await loadIdeaIntel(selectedIdeaId)
       await loadWorkspaceAggregates(ideas)
+      setToast('Competitor discovery complete.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Competitor discovery failed')
     } finally {
@@ -212,6 +226,7 @@ function CompetitorsContent() {
       }
       await loadIdeaIntel(selectedIdeaId)
       await loadWorkspaceAggregates(ideas)
+      setToast('Competitor analysis complete.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed')
     } finally {
@@ -233,6 +248,7 @@ Use numbered lists under clear headings.`
       setError(null)
       const res = await CopilotAPI.chat({ query: prompt, idea_id: selectedIdea.id })
       setStrategicSections(parseStrategicInsights(res.response))
+      setToast('Strategic insights generated.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate insights')
     } finally {
@@ -244,6 +260,7 @@ Use numbered lists under clear headings.`
 
   return (
     <div className="page ci-workspace">
+      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
       <div className="page-head">
         <div>
           <div className="ph-eyebrow">Competitor intelligence · workspace</div>
@@ -295,9 +312,11 @@ Use numbered lists under clear headings.`
                 <select
                   value={selectedIdeaId}
                   onChange={e => {
-                    setSelectedIdeaId(e.target.value)
+                    const id = e.target.value
+                    setSelectedIdeaId(id)
                     setStrategicSections(null)
                     setExpandedFeatures(null)
+                    syncIdeaInUrl(id)
                   }}
                   className="dash-select ci-idea-select"
                   aria-label="Select idea for competitor research"
@@ -326,7 +345,7 @@ Use numbered lists under clear headings.`
                         />
                       ) : (
                         competitors.map((c, idx) => {
-                          const cid = String(c.id || idx)
+                          const cid = competitorId(c, idx)
                           const name = competitorDisplayName(c, idx)
                           const site = competitorWebsite(c)
                           const desc = competitorDescription(c)
@@ -395,13 +414,15 @@ Use numbered lists under clear headings.`
                 </div>
               </div>
 
-              <MarketPositionMap points={positionPoints} />
+              <div className="ci-workspace-bottom">
+                <MarketPositionMap points={positionPoints} />
 
-              <StrategicInsightsCard
-                sections={strategicSections}
-                loading={insightsLoading}
-                onGenerate={generateStrategicInsights}
-              />
+                <StrategicInsightsCard
+                  sections={strategicSections}
+                  loading={insightsLoading}
+                  onGenerate={generateStrategicInsights}
+                />
+              </div>
             </>
           )}
         </>

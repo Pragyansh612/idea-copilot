@@ -1471,6 +1471,37 @@ body.app-body {
   color: var(--fg-2);
 }
 .fm-summary b { color: var(--fg); }
+.fm-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.fm-cell.fm-diff,
+.fm-legend-item.fm-diff {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.fm-cell.fm-gap,
+.fm-legend-item.fm-gap {
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+}
+.fm-legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 18px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  font-family: var(--font-mono);
+  color: var(--fg-3);
+}
+.fm-legend-item {
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+.ci-workspace-bottom {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
 .ci-strat-sections {
   display: grid;
   gap: 14px;
@@ -1532,6 +1563,10 @@ body.app-body {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--bg-2);
+}
+.ci-intel-banner {
+  border-color: var(--accent-line);
+  background: linear-gradient(160deg, var(--accent-soft), transparent 72%) var(--surface);
 }
 .competitor-nudge {
   border-color: var(--accent-line);

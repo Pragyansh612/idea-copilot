@@ -175,7 +175,10 @@ export default function DashboardHome() {
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button type="button" className="btn-sm solid" onClick={() => router.push(routes.competitorsForIdea(competitorNudge.id))}>
-                <DI.Radar /> Start now
+                <DI.Radar /> Discover competitors
+              </button>
+              <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.competitorsForIdea(competitorNudge.id))}>
+                View workspace
               </button>
               <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideaTab(competitorNudge.id, 'intelligence'))}>
                 Open intelligence tab
