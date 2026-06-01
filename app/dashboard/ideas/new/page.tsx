@@ -56,7 +56,7 @@ export default function NewIdeaPage() {
         <div>
           <div className="ph-eyebrow">New idea</div>
           <h1>Capture a <em>spark</em>.</h1>
-          <div className="ph-sub">Saved to your workspace via the API.</div>
+          <div className="ph-sub">After you create, we&apos;ll open your idea with a guided checklist for what to do next.</div>
         </div>
         <div className="page-head-actions">
           <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideas)}>
@@ -106,6 +106,23 @@ export default function NewIdeaPage() {
           </button>
         </div>
       </form>
+
+      <div className="idea-creation-steps" aria-label="Founder journey steps">
+        {[
+          { n: 1, label: 'Create', on: true },
+          { n: 2, label: 'Generate Features' },
+          { n: 3, label: 'Build Roadmap' },
+          { n: 4, label: 'Research Market' },
+        ].map((step, idx, arr) => (
+          <span key={step.n} style={{ display: 'contents' }}>
+            <span className={`idea-creation-step ${step.on ? 'on' : ''}`}>
+              <span className="idea-creation-step-num">{step.n}</span>
+              {step.label}
+            </span>
+            {idx < arr.length - 1 && <span className="idea-creation-step-sep" aria-hidden />}
+          </span>
+        ))}
+      </div>
     </div>
   )
 }

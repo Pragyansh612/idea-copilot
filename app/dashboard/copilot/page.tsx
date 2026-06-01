@@ -65,8 +65,8 @@ function CopilotPageInner() {
       const ideaParam = searchParams.get('idea')
       if (ideaParam) {
         setSelectedIdeaId(ideaParam)
-      } else if (ideaResult.ideas[0]) {
-        setSelectedIdeaId(ideaResult.ideas[0].id)
+      } else {
+        setSelectedIdeaId(undefined)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load Copilot')

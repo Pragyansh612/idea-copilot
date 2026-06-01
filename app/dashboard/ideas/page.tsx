@@ -3,11 +3,23 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { CategoryAPI, IdeaAPI, type Category, type Idea } from '@/lib/api/idea'
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
+import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
 import { ideaScore, matchesStatusFilter, statusBadge, statusLabel, timeAgo } from '@/lib/dashboard/format'
+import { fetchReadinessMapForIdeas, type ReadinessSignals } from '@/lib/dashboard/readiness'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
 const FILTERS = ['All', 'Active', 'Validating', 'Draft', 'Stalled']
+
+function emptySignals(): ReadinessSignals {
+  return {
+    hasDescription: false,
+    hasFeatures: false,
+    hasPhases: false,
+    hasCompetitors: false,
+    hasMarketGap: false,
+  }
+}
 
 export default function MyIdeasPage() {
   const router = useRouter()
@@ -15,6 +27,7 @@ export default function MyIdeasPage() {
   const [filter, setFilter] = useState('All')
   const [cat, setCat] = useState('all')
   const [ideas, setIdeas] = useState<Idea[]>([])
+  const [readinessByIdea, setReadinessByIdea] = useState<Map<string, ReadinessSignals>>(new Map())
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -29,6 +42,8 @@ export default function MyIdeasPage() {
       ])
       setCategories(cats)
       setIdeas(result.ideas)
+      const snapshots = await fetchReadinessMapForIdeas(result.ideas, { activeOnly: false })
+      setReadinessByIdea(snapshots)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ideas')
     } finally {
@@ -56,7 +71,7 @@ export default function MyIdeasPage() {
         <div>
           <div className="ph-eyebrow">My Ideas · {ideas.length} total</div>
           <h1>Every spark you&apos;ve <em>filed</em>.</h1>
-          <div className="ph-sub">Drafts, validations, active projects — sorted by how recently they were updated.</div>
+          <div className="ph-sub">Each card shows Startup Readiness — your path from idea to validated market.</div>
         </div>
         <div className="page-head-actions">
           <button className="btn-sm ghost" onClick={() => router.push(routes.copilot)}><DI.Spark/> Ask Copilot</button>
@@ -101,6 +116,7 @@ export default function MyIdeasPage() {
           {list.map(i => {
             const badge = statusBadge(i.status)
             const score = ideaScore(i)
+            const signals = readinessByIdea.get(i.id) ?? emptySignals()
             return (
               <div key={i.id} className="idea" onClick={() => router.push(routes.idea(i.id))}>
                 <div className="i-row1">
@@ -110,6 +126,12 @@ export default function MyIdeasPage() {
                 <h3>{i.title}</h3>
                 <p className="i-desc">{i.description || 'No description yet.'}</p>
                 <div className="i-prog"><div className="bar" style={{ width: `${i.progress_percentage}%` }}/></div>
+                <div className="idea-card-readiness" onClick={e => e.stopPropagation()}>
+                  <StartupReadinessScore signals={signals} size="sm" />
+                  <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideaTab(i.id, 'overview'))}>
+                    Continue
+                  </button>
+                </div>
                 <div className="i-foot">
                   <div className="tags">{(i.tags || []).slice(0, 3).map(t => <span key={t}>{t}</span>)}</div>
                   <span className="sep"/>
@@ -120,21 +142,26 @@ export default function MyIdeasPage() {
           })}
         </div>
       ) : (
-        <div className="card" style={{ padding: 0 }}>
+        <div className="dash-card" style={{ padding: 0 }}>
           <div className="ci-table">
             <div className="ci-row h">
-              <span/><span>Idea</span><span>Status</span><span>Priority</span>
+              <span/><span>Idea</span><span>Status</span><span>Readiness</span>
               <span style={{ textAlign: 'right' }}>Score</span>
             </div>
-            {list.map(i => (
-              <div key={i.id} className="ci-row" onClick={() => router.push(routes.idea(i.id))}>
-                <span className="ci-logo">{i.title[0]}</span>
-                <span className="ci-name">{i.title}<span className="sub">{(i.tags || []).join(' · ')}</span></span>
-                <span><span className={`i-tag ${statusBadge(i.status).kind}`}>{statusLabel(i.status)}</span></span>
-                <span className="ci-mark">{i.priority}</span>
-                <span className="ci-score">{ideaScore(i)}</span>
-              </div>
-            ))}
+            {list.map(i => {
+              const signals = readinessByIdea.get(i.id) ?? emptySignals()
+              return (
+                <div key={i.id} className="ci-row" onClick={() => router.push(routes.idea(i.id))}>
+                  <span className="ci-logo">{i.title[0]}</span>
+                  <span className="ci-name">{i.title}<span className="sub">{(i.tags || []).join(' · ')}</span></span>
+                  <span><span className={`i-tag ${statusBadge(i.status).kind}`}>{statusLabel(i.status)}</span></span>
+                  <span className="ci-mark">
+                    <StartupReadinessScore signals={signals} size="sm" showLabel={false} />
+                  </span>
+                  <span className="ci-score">{ideaScore(i)}</span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

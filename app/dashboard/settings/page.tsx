@@ -11,7 +11,7 @@ import type { ReactNode } from 'react'
 
 function SetCard({ title, desc, children }: { title: string; desc?: string; children: ReactNode }) {
   return (
-    <div className="card">
+    <div className="dash-card">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid var(--line)' }}>
         <h3 style={{ fontWeight: 400, fontSize: 17, letterSpacing: '-0.02em', color: 'var(--fg)' }}>{title}</h3>
         {desc && <p style={{ fontSize: 13, color: 'var(--fg-2)', lineHeight: 1.5 }}>{desc}</p>}

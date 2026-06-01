@@ -4,19 +4,18 @@ import { useRouter } from 'next/navigation'
 import { AuthAPI, type AuthUser } from '@/lib/api/auth'
 import { IdeaAPI, PhaseAPI, type Idea } from '@/lib/api/idea'
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
+import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
 import { displayName, statusBadge, timeAgo } from '@/lib/dashboard/format'
 import { phaseProgress } from '@/lib/dashboard/phase-progress'
+import {
+  buildDashboardNextAction,
+  dashboardNextActionRoute,
+  fetchReadinessMapForIdeas,
+  pickLowestReadinessIdea,
+  type ReadinessSignals,
+} from '@/lib/dashboard/readiness'
 import { routes } from '@/lib/routes'
-import { getGapRunMap, markGapRun, saveGapsForIdea } from '@/lib/dashboard/gap-storage'
-import { normalizeGaps } from '@/lib/dashboard/gaps'
 import * as DI from '@/components/dashboard/Icons'
-
-type NextAction = {
-  label: string
-  detail: string
-  cta: string
-  run: () => void
-}
 
 export default function DashboardHome() {
   const router = useRouter()
@@ -24,8 +23,11 @@ export default function DashboardHome() {
   const [error, setError] = useState<string | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [ideas, setIdeas] = useState<Idea[]>([])
+  const [readinessByIdea, setReadinessByIdea] = useState<Map<string, ReadinessSignals>>(new Map())
   const [recentProgress, setRecentProgress] = useState<Record<string, ReturnType<typeof phaseProgress>>>({})
-  const [nextAction, setNextAction] = useState<NextAction | null>(null)
+  const [nextAction, setNextAction] = useState<ReturnType<typeof buildDashboardNextAction>>(null)
+  const [nextActionIdeaId, setNextActionIdeaId] = useState<string | null>(null)
+  const [nextActionPercent, setNextActionPercent] = useState(0)
   const [competitorNudge, setCompetitorNudge] = useState<{ id: string; title: string } | null>(null)
   const [profileName, setProfileName] = useState<string | undefined>()
   const [recentAchievements, setRecentAchievements] = useState<Array<{ title: string; icon?: string }>>([])
@@ -39,7 +41,7 @@ export default function DashboardHome() {
       const [me, stats, ideasData, profile, achievements] = await Promise.all([
         AuthAPI.getMe(),
         import('@/lib/api/user').then(m => m.UserAPI.getStats()).catch(() => null),
-        IdeaAPI.getIdeas({ limit: 20, sort_by: 'updated_at', sort_order: 'desc' }),
+        IdeaAPI.getIdeas({ limit: 50, sort_by: 'updated_at', sort_order: 'desc' }),
         import('@/lib/api/user').then(m => m.UserAPI.getProfile()).catch(() => null),
         import('@/lib/api/achievement').then(m => m.AchievementAPI.getUserAchievements()).catch(() => []),
       ])
@@ -55,6 +57,9 @@ export default function DashboardHome() {
       setXp(stats?.total_xp ?? 0)
       setLevel(stats?.current_level ?? 1)
 
+      const snapshots = await fetchReadinessMapForIdeas(ideasData.ideas, { activeOnly: true })
+      setReadinessByIdea(snapshots)
+
       const recent = ideasData.ideas.slice(0, 3)
       const progressPairs = await Promise.all(
         recent.map(async idea => {
@@ -64,71 +69,25 @@ export default function DashboardHome() {
       )
       setRecentProgress(Object.fromEntries(progressPairs))
 
-      const activeIdeas = ideasData.ideas.filter(i => !i.is_archived && i.status !== 'archived')
-      const nudgeChecks = await Promise.all(
-        activeIdeas.slice(0, 12).map(async idea => {
-          const comp = await import('@/lib/api/idea').then(m =>
-            m.CompetitorAPI.getCompetitorResearch(idea.id).catch(() => ({ research: [] })),
-          )
-          const count = ((comp.research || comp.competitors || []) as unknown[]).length
-          return { idea, count }
-        }),
-      )
-      const withoutResearch = nudgeChecks.find(x => x.count === 0)
-      setCompetitorNudge(withoutResearch ? { id: withoutResearch.idea.id, title: withoutResearch.idea.title } : null)
-
-      const topIdea = ideasData.ideas[0]
-      if (!topIdea) {
-        setNextAction(null)
+      const lowest = pickLowestReadinessIdea(ideasData.ideas, snapshots)
+      if (lowest) {
+        setNextAction(buildDashboardNextAction(lowest.idea, lowest.signals))
+        setNextActionIdeaId(lowest.idea.id)
+        setNextActionPercent(lowest.percent)
       } else {
-        const [detail, comp] = await Promise.all([
-          IdeaAPI.getIdea(topIdea.id),
-          import('@/lib/api/idea').then(m => m.CompetitorAPI.getCompetitorResearch(topIdea.id)).catch(() => ({ research: [] })),
-        ])
-        const gapRun = getGapRunMap()[topIdea.id]
-        const competitors = (comp.research || comp.competitors || []) as unknown[]
-        if ((detail.features?.length ?? 0) === 0) {
-          setNextAction({
-            label: 'Generate features',
-            detail: `${topIdea.title} has no features yet.`,
-            cta: 'Generate now',
-            run: () => router.push(routes.ideaTab(topIdea.id, 'overview')),
-          })
-        } else if ((detail.phases?.length ?? 0) === 0) {
-          setNextAction({
-            label: 'Build roadmap',
-            detail: `${topIdea.title} has no phases yet.`,
-            cta: 'Create phases',
-            run: () => router.push(routes.ideaTab(topIdea.id, 'roadmap')),
-          })
-        } else if (competitors.length === 0) {
-          setNextAction({
-            label: 'Run competitor research',
-            detail: `${topIdea.title} has no competitor research yet.`,
-            cta: 'Discover competitors',
-            run: () => router.push(routes.competitorsDiscover(topIdea.id)),
-          })
-        } else if (!gapRun) {
-          setNextAction({
-            label: 'Analyze market gap',
-            detail: `${topIdea.title} has no recent market gap analysis.`,
-            cta: 'Run analysis',
-            run: async () => {
-              const result = await IdeaAPI.marketGapAnalysis(topIdea.id).catch(() => null)
-              if (result) saveGapsForIdea(topIdea.id, normalizeGaps(result))
-              else markGapRun(topIdea.id)
-              router.push(routes.gaps)
-            },
-          })
-        } else {
-          setNextAction({
-            label: 'Continue building',
-            detail: `${topIdea.title} is ready for the next execution step.`,
-            cta: 'Open idea',
-            run: () => router.push(routes.idea(topIdea.id)),
-          })
-        }
+        setNextAction(null)
+        setNextActionIdeaId(null)
+        setNextActionPercent(100)
       }
+
+      const activeIdeas = ideasData.ideas.filter(i => !i.is_archived && i.status !== 'archived')
+      const withoutResearch = activeIdeas.find(idea => {
+        const s = snapshots.get(idea.id)
+        return s && !s.hasCompetitors
+      })
+      setCompetitorNudge(
+        withoutResearch ? { id: withoutResearch.id, title: withoutResearch.title } : null,
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard')
     } finally {
@@ -142,6 +101,9 @@ export default function DashboardHome() {
 
   const name = displayName(authUser?.email, profileName)
   const recentIdeas = useMemo(() => ideas.slice(0, 3), [ideas])
+  const showCompetitorNudge =
+    competitorNudge &&
+    !(nextAction?.step === 'competitors' && nextActionIdeaId === competitorNudge.id)
 
   return (
     <div className="page">
@@ -149,7 +111,7 @@ export default function DashboardHome() {
         <div>
           <div className="ph-eyebrow">Dashboard</div>
           <h1>Welcome back, <em>{name}</em>.</h1>
-          <div className="ph-sub">Focused workspace for what to do next, not vanity metrics.</div>
+          <div className="ph-sub">Your guided founder journey — one clear next step at a time.</div>
         </div>
         <div className="page-head-actions">
           <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}><DI.Plus/> New idea</button>
@@ -163,7 +125,62 @@ export default function DashboardHome() {
 
       {!loading && !error && (
       <>
-      {competitorNudge && (
+      <div className="dash-card next-action-hero">
+        <div className="eyebrow-mono">Recommended next step</div>
+        {nextAction ? (
+          <>
+            <h2>
+              Recommended next step: <em>{nextAction.actionLabel}</em> for {nextAction.ideaTitle}
+            </h2>
+            <p>{nextAction.detail}</p>
+            <div className="next-action-hero-actions">
+              <button
+                type="button"
+                className="btn-sm solid"
+                onClick={() => {
+                  if (!nextActionIdeaId) return
+                  router.push(dashboardNextActionRoute(nextActionIdeaId, nextAction.step))
+                }}
+              >
+                {nextAction.actionLabel}
+              </button>
+              <button
+                type="button"
+                className="btn-sm ghost"
+                onClick={() => {
+                  if (nextActionIdeaId) router.push(routes.idea(nextActionIdeaId))
+                }}
+              >
+                Open idea
+              </button>
+              <div className="next-action-hero-score">
+                <StartupReadinessScore
+                  signals={readinessByIdea.get(nextActionIdeaId ?? '') ?? emptySignals()}
+                  size="sm"
+                />
+              </div>
+            </div>
+          </>
+        ) : ideas.length === 0 ? (
+          <>
+            <h2>Start your <em>first idea</em></h2>
+            <p>Capture a spark and we&apos;ll guide you through features, roadmap, and market validation.</p>
+            <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
+              <DI.Plus /> New idea
+            </button>
+          </>
+        ) : (
+          <>
+            <h2>All ideas are <em>launch-ready</em></h2>
+            <p>Every active idea scored 100% Startup Readiness. Keep building or add a new idea.</p>
+            <button type="button" className="btn-sm solid" onClick={() => router.push(routes.ideas)}>
+              View ideas
+            </button>
+          </>
+        )}
+      </div>
+
+      {showCompetitorNudge && competitorNudge && (
         <div className="dash-card competitor-nudge" style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <div>
@@ -180,32 +197,10 @@ export default function DashboardHome() {
               <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.competitorsForIdea(competitorNudge.id))}>
                 View workspace
               </button>
-              <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideaTab(competitorNudge.id, 'intelligence'))}>
-                Open intelligence tab
-              </button>
             </div>
           </div>
         </div>
       )}
-      <div className="dash-card" style={{ marginBottom: 20 }}>
-        <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Recommended next step</div>
-        {nextAction ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-            <div>
-              <h3 style={{ fontSize: 20, fontWeight: 400, letterSpacing: '-0.02em', marginBottom: 4 }}>{nextAction.label}</h3>
-              <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>{nextAction.detail}</p>
-            </div>
-            <button type="button" className="btn-sm solid" onClick={nextAction.run}>{nextAction.cta}</button>
-          </div>
-        ) : (
-          <PageEmpty
-            icon={<DI.Bulb />}
-            title="Capture your first idea"
-            description="Create an idea and we'll suggest the best next action here."
-            action={<button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}><DI.Plus /> New idea</button>}
-          />
-        )}
-      </div>
 
       <div className="section-block">
         <div className="section-block-head">
@@ -227,23 +222,25 @@ export default function DashboardHome() {
             {recentIdeas.map(i => {
               const badge = statusBadge(i.status)
               const progress = recentProgress[i.id] ?? { total: 0, completed: 0, percent: 0 }
+              const signals = readinessByIdea.get(i.id) ?? emptySignals()
               return (
                 <div key={i.id} className="idea">
                   <div className="i-row1">
                     <span className={`i-tag ${badge.kind}`}>{badge.text}</span>
-                    <span className="i-score">phases · <b>{progress.completed}/{progress.total}</b></span>
                   </div>
                   <h3>{i.title}</h3>
                   <p className="i-desc">{i.description || 'No description yet.'}</p>
                   <div className="i-prog"><div className="bar" style={{ width: `${progress.percent}%` }}/></div>
                   <div className="i-foot">
-                    <span>{progress.percent}% roadmap progress</span>
+                    <span>{progress.percent}% roadmap</span>
                     <span className="sep"/>
                     <span>{timeAgo(i.updated_at)}</span>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                    <button type="button" className="btn-sm solid" onClick={() => router.push(routes.idea(i.id))}>Continue</button>
-                    <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideaTab(i.id, 'overview'))}>Overview</button>
+                  <div className="idea-card-readiness">
+                    <StartupReadinessScore signals={signals} size="sm" />
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button type="button" className="btn-sm solid" onClick={() => router.push(routes.idea(i.id))}>Continue</button>
+                    </div>
                   </div>
                 </div>
               )
@@ -271,7 +268,9 @@ export default function DashboardHome() {
             <>
               <span className="founder-achievement-pill">{ideas.length} ideas tracked</span>
               <span className="founder-achievement-pill">{recentIdeas.filter(i => i.status === 'in_progress').length} active ideas</span>
-              <span className="founder-achievement-pill">{recentIdeas.length} recently updated</span>
+              {nextActionPercent < 100 && nextAction && (
+                <span className="founder-achievement-pill">Next: {nextActionPercent}% on {nextAction.ideaTitle}</span>
+              )}
             </>
           )}
         </div>
@@ -280,4 +279,14 @@ export default function DashboardHome() {
       )}
     </div>
   )
+}
+
+function emptySignals(): ReadinessSignals {
+  return {
+    hasDescription: false,
+    hasFeatures: false,
+    hasPhases: false,
+    hasCompetitors: false,
+    hasMarketGap: false,
+  }
 }

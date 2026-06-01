@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
+import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
 import { IdeaAPI, PhaseAPI, type Idea, type Phase } from '@/lib/api/idea'
 import { phaseProgress } from '@/lib/dashboard/phase-progress'
+import { fetchReadinessMapForIdeas, type ReadinessSignals } from '@/lib/dashboard/readiness'
 import { statusBadge, statusLabel } from '@/lib/dashboard/format'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
@@ -15,9 +17,20 @@ type IdeaRoadmapRow = {
   progress: ReturnType<typeof phaseProgress>
 }
 
+function emptySignals(): ReadinessSignals {
+  return {
+    hasDescription: false,
+    hasFeatures: false,
+    hasPhases: false,
+    hasCompetitors: false,
+    hasMarketGap: false,
+  }
+}
+
 export default function RoadmapsPage() {
   const router = useRouter()
   const [rows, setRows] = useState<IdeaRoadmapRow[]>([])
+  const [readinessByIdea, setReadinessByIdea] = useState<Map<string, ReadinessSignals>>(new Map())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -30,17 +43,21 @@ export default function RoadmapsPage() {
         sort_by: 'updated_at',
         sort_order: 'desc',
       })
-      const withPhases = await Promise.all(
-        ideas.map(async idea => {
-          try {
-            const phases = await PhaseAPI.getPhases(idea.id)
-            return { idea, phases, progress: phaseProgress(phases) }
-          } catch {
-            return { idea, phases: [], progress: phaseProgress([]) }
-          }
-        }),
-      )
+      const [withPhases, snapshots] = await Promise.all([
+        Promise.all(
+          ideas.map(async idea => {
+            try {
+              const phases = await PhaseAPI.getPhases(idea.id)
+              return { idea, phases, progress: phaseProgress(phases) }
+            } catch {
+              return { idea, phases: [], progress: phaseProgress([]) }
+            }
+          }),
+        ),
+        fetchReadinessMapForIdeas(ideas, { activeOnly: false }),
+      ])
       setRows(withPhases)
+      setReadinessByIdea(snapshots)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load roadmaps')
       setRows([])
@@ -88,6 +105,7 @@ export default function RoadmapsPage() {
         <div className="roadmap-list">
           {rows.map(({ idea, phases, progress }) => {
             const badge = statusBadge(idea.status)
+            const signals = readinessByIdea.get(idea.id) ?? emptySignals()
             return (
               <div key={idea.id} className="roadmap-row dash-card">
                 <div className="roadmap-row-main">
@@ -107,6 +125,9 @@ export default function RoadmapsPage() {
                     </div>
                     <span className="roadmap-row-pct">{progress.percent}%</span>
                   </div>
+                  <div className="idea-card-readiness" style={{ marginTop: 12, paddingTop: 0, borderTop: 0 }}>
+                    <StartupReadinessScore signals={signals} size="sm" />
+                  </div>
                 </div>
                 <div className="roadmap-row-actions">
                   <button
@@ -119,7 +140,7 @@ export default function RoadmapsPage() {
                   <button
                     type="button"
                     className="btn-sm ghost"
-                    onClick={() => router.push(routes.idea(idea.id))}
+                    onClick={() => router.push(routes.ideaTab(idea.id, 'overview'))}
                   >
                     Idea overview
                   </button>

@@ -10,7 +10,15 @@ export const routes = {
   ideas: '/dashboard/ideas',
   newIdea: '/dashboard/ideas/new',
   idea: (id: string) => `/dashboard/ideas/${id}`,
-  ideaTab: (id: string, tab: string) => `/dashboard/ideas/${id}?tab=${tab}`,
+  ideaTab: (id: string, tab: string, query?: Record<string, string>) => {
+    const params = new URLSearchParams({ tab })
+    if (query) {
+      for (const [key, value] of Object.entries(query)) {
+        params.set(key, value)
+      }
+    }
+    return `/dashboard/ideas/${id}?${params.toString()}`
+  },
   ideaExport: (id: string) => `/dashboard/ideas/${id}?action=export`,
   copilot: '/dashboard/copilot',
   copilotWithDraft: '/dashboard/copilot?draft=1',

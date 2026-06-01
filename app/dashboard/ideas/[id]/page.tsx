@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import {
@@ -22,7 +22,9 @@ import { Toast } from '@/components/dashboard/Toast'
 import { normalizeGaps, type GapItem } from '@/lib/dashboard/gaps'
 import { hasGapRun, loadGapsForIdea, saveGapsForIdea } from '@/lib/dashboard/gap-storage'
 import { suggestionBody, suggestionItemType } from '@/lib/dashboard/suggestions'
-import { buildReadinessItems } from '@/lib/dashboard/readiness'
+import { ReadinessChecklist } from '@/components/dashboard/ReadinessChecklist'
+import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
+import { buildReadinessItems, signalsFromIdeaDetail } from '@/lib/dashboard/readiness'
 import { formatDate, ideaScore, priorityShort, statusLabel, timeAgo } from '@/lib/dashboard/format'
 import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext'
 import { routes } from '@/lib/routes'
@@ -66,6 +68,7 @@ function IdeaDetailContent() {
   const [exportBusy, setExportBusy] = useState<'markdown' | 'pdf' | null>(null)
   const [editingDescription, setEditingDescription] = useState(false)
   const [descriptionDraft, setDescriptionDraft] = useState('')
+  const phaseNameRef = useRef<HTMLInputElement>(null)
   const { setIdeaDetailTitle } = useDashboardChrome()
 
   useEffect(() => {
@@ -74,7 +77,7 @@ function IdeaDetailContent() {
 
   useEffect(() => {
     if (searchParams.get('created') === '1') {
-      setToast('Idea created. Use the readiness checklist below for your next steps.')
+      setToast("Idea created. Here's what to do next.")
       router.replace(routes.idea(ideaId), { scroll: false })
     }
   }, [searchParams, ideaId, router])
@@ -92,6 +95,13 @@ function IdeaDetailContent() {
       setTab(mapped as typeof tab)
     }
   }, [searchParams])
+
+  useEffect(() => {
+    if (searchParams.get('focus') === 'phase' && tab === 'roadmap') {
+      phaseNameRef.current?.focus()
+      phaseNameRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+  }, [searchParams, tab])
 
   const showExportPanel = searchParams.get('action') === 'export'
 
@@ -238,6 +248,21 @@ function IdeaDetailContent() {
     }
   }
 
+  async function discoverCompetitorsInline() {
+    try {
+      setBusyAction('discover')
+      setError(null)
+      await IdeaAPI.discoverCompetitors(ideaId)
+      const comp = await CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] }))
+      setCompetitors(comp.research || comp.competitors || [])
+      setToast('Competitors discovered.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Competitor discovery failed')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   async function analyzeCompetitor(c: Record<string, unknown>) {
     const url = String(c.competitor_url || c.url || '')
     try {
@@ -371,7 +396,17 @@ function IdeaDetailContent() {
     return byPhase
   }, [features])
 
-  const marketGapAnalyzed = gaps.length > 0 || marketGapDone
+  const readinessSignals = useMemo(
+    () =>
+      signalsFromIdeaDetail({
+        description: idea?.description,
+        featureCount: features.length,
+        phaseCount: phases.length,
+        competitorCount: competitors.length,
+        ideaId,
+      }),
+    [idea?.description, features.length, phases.length, competitors.length, ideaId],
+  )
 
   if (loading) {
     return <div className="page"><PageLoading label="Loading idea…" /></div>
@@ -390,23 +425,26 @@ function IdeaDetailContent() {
 
   const score = ideaScore(idea)
   const readiness = buildReadinessItems({
-    hasDescription: Boolean(idea.description?.trim()),
-    hasFeatures: features.length > 0,
-    hasPhases: phases.length > 0,
-    hasCompetitors: competitors.length > 0,
-    hasMarketGap: marketGapAnalyzed,
+    signals: readinessSignals,
     onDescribe: () => {
       setTab('overview')
       setDescriptionDraft(idea.description || '')
       setEditingDescription(true)
+      requestAnimationFrame(() => {
+        document.getElementById('idea-description')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      })
     },
     onGenerateFeatures: () => {
       setTab('overview')
       setSuggestionType('features')
       void generateSuggestions()
     },
-    onCreateRoadmap: () => setTab('roadmap'),
-    onDiscoverCompetitors: () => router.push(routes.competitorsDiscover(ideaId)),
+    onCreateRoadmap: () => {
+      setTab('roadmap')
+      router.replace(routes.ideaTab(ideaId, 'roadmap', { focus: 'phase' }), { scroll: false })
+      requestAnimationFrame(() => phaseNameRef.current?.focus())
+    },
+    onDiscoverCompetitors: () => void discoverCompetitorsInline(),
     onRunMarketGap: () => {
       setTab('intelligence')
       void runMarketGapAnalysis()
@@ -489,7 +527,7 @@ function IdeaDetailContent() {
             </div>
           </div>
 
-          <div className="card">
+          <div className="dash-card">
             <div className="id-meta">
               <div className="row"><span className="key">Status</span><span className="val pill accent">{statusLabel(idea.status)}</span></div>
               <div className="row"><span className="key">Priority</span><span className="val">{idea.priority}</span></div>
@@ -499,7 +537,7 @@ function IdeaDetailContent() {
           </div>
 
           {(idea.tags?.length ?? 0) > 0 && (
-            <div className="card">
+            <div className="dash-card">
               <div className="eyebrow-mono" style={{ marginBottom: 12 }}>Tags</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {idea.tags.map(t => (
@@ -556,21 +594,17 @@ function IdeaDetailContent() {
                   </div>
                 </div>
                 <div className="dash-card" style={{ padding: 12 }}>
-                  <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Startup readiness checklist</div>
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {readiness.map(item => (
-                      <div key={item.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ width: 16, height: 16, borderRadius: 99, border: `1px solid ${item.done ? 'var(--accent)' : 'var(--line-3)'}`, background: item.done ? 'var(--accent)' : 'transparent', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                            {item.done && <DI.Check style={{ width: 10, height: 10, color: 'white' }} />}
-                          </span>
-                          {item.label}
-                        </span>
-                        {!item.done && (
-                          <button type="button" className="btn-sm ghost" onClick={item.action}>{item.cta}</button>
-                        )}
-                      </div>
-                    ))}
+                  <div className="readiness-overview-row">
+                    <div>
+                      <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Startup Readiness</div>
+                      <p style={{ color: 'var(--fg-2)', fontSize: 13, margin: 0, maxWidth: '36ch' }}>
+                        Complete each step to validate your idea before you build.
+                      </p>
+                    </div>
+                    <StartupReadinessScore signals={readinessSignals} size="lg" />
+                  </div>
+                  <div style={{ marginTop: 16 }}>
+                    <ReadinessChecklist items={readiness} />
                   </div>
                 </div>
                 {(editingDescription || !idea.description?.trim()) && (
@@ -650,6 +684,7 @@ function IdeaDetailContent() {
                 <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Add Phase</div>
                 <div style={{ display: 'grid', gap: 8 }}>
                   <input
+                    ref={phaseNameRef}
                     style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--bg-2)', color: 'var(--fg)' }}
                     placeholder="Phase name"
                     value={newPhaseName}
