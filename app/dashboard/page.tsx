@@ -3,8 +3,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AuthAPI, type AuthUser } from '@/lib/api/auth'
 import { IdeaAPI, PhaseAPI, type Idea } from '@/lib/api/idea'
+import { FounderSummaryStrip } from '@/components/dashboard/FounderSummaryStrip'
+import { InsightFeed } from '@/components/dashboard/InsightFeed'
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
+import { WorkspaceHealthCard } from '@/components/dashboard/WorkspaceHealthCard'
 import { displayName, statusBadge, timeAgo } from '@/lib/dashboard/format'
 import { phaseProgress } from '@/lib/dashboard/phase-progress'
 import {
@@ -14,6 +17,11 @@ import {
   pickLowestReadinessIdea,
   type ReadinessSignals,
 } from '@/lib/dashboard/readiness'
+import {
+  computeFounderSummary,
+  computeWorkspaceHealth,
+  generateWorkspaceInsights,
+} from '@/lib/dashboard/workspace-intelligence'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
@@ -101,17 +109,35 @@ export default function DashboardHome() {
 
   const name = displayName(authUser?.email, profileName)
   const recentIdeas = useMemo(() => ideas.slice(0, 3), [ideas])
+
+  const founderSummary = useMemo(
+    () => computeFounderSummary(ideas, readinessByIdea),
+    [ideas, readinessByIdea],
+  )
+  const workspaceHealth = useMemo(
+    () => computeWorkspaceHealth(ideas, readinessByIdea),
+    [ideas, readinessByIdea],
+  )
+  const insights = useMemo(
+    () => generateWorkspaceInsights(ideas, readinessByIdea),
+    [ideas, readinessByIdea],
+  )
+
   const showCompetitorNudge =
     competitorNudge &&
     !(nextAction?.step === 'competitors' && nextActionIdeaId === competitorNudge.id)
 
   return (
     <div className="page">
+      {!loading && !error && ideas.length > 0 && (
+        <FounderSummaryStrip summary={founderSummary} />
+      )}
+
       <div className="page-head">
         <div>
           <div className="ph-eyebrow">Dashboard</div>
           <h1>Welcome back, <em>{name}</em>.</h1>
-          <div className="ph-sub">Your guided founder journey — one clear next step at a time.</div>
+          <div className="ph-sub">Your workspace surfaces what needs attention — not just what exists.</div>
         </div>
         <div className="page-head-actions">
           <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}><DI.Plus/> New idea</button>
@@ -125,6 +151,8 @@ export default function DashboardHome() {
 
       {!loading && !error && (
       <>
+      {!loading && ideas.length > 0 && <WorkspaceHealthCard health={workspaceHealth} />}
+
       <div className="dash-card next-action-hero">
         <div className="eyebrow-mono">Recommended next step</div>
         {nextAction ? (
@@ -179,6 +207,8 @@ export default function DashboardHome() {
           </>
         )}
       </div>
+
+      <InsightFeed insights={insights} />
 
       {showCompetitorNudge && competitorNudge && (
         <div className="dash-card competitor-nudge" style={{ marginBottom: 20 }}>
@@ -266,11 +296,9 @@ export default function DashboardHome() {
             ))
           ) : (
             <>
-              <span className="founder-achievement-pill">{ideas.length} ideas tracked</span>
-              <span className="founder-achievement-pill">{recentIdeas.filter(i => i.status === 'in_progress').length} active ideas</span>
-              {nextActionPercent < 100 && nextAction && (
-                <span className="founder-achievement-pill">Next: {nextActionPercent}% on {nextAction.ideaTitle}</span>
-              )}
+              <span className="founder-achievement-pill">{founderSummary.ready} ready to build</span>
+              <span className="founder-achievement-pill">{founderSummary.work} need work</span>
+              <span className="founder-achievement-pill">{founderSummary.attention} need attention</span>
             </>
           )}
         </div>

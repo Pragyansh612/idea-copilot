@@ -22,7 +22,9 @@ import { Toast } from '@/components/dashboard/Toast'
 import { normalizeGaps, type GapItem } from '@/lib/dashboard/gaps'
 import { hasGapRun, loadGapsForIdea, saveGapsForIdea } from '@/lib/dashboard/gap-storage'
 import { suggestionBody, suggestionItemType } from '@/lib/dashboard/suggestions'
+import { IdeaSmartAlerts } from '@/components/dashboard/IdeaSmartAlerts'
 import { ReadinessChecklist } from '@/components/dashboard/ReadinessChecklist'
+import { RelatedIdeasSection } from '@/components/dashboard/RelatedIdeasSection'
 import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
 import { buildReadinessItems, signalsFromIdeaDetail } from '@/lib/dashboard/readiness'
 import { formatDate, ideaScore, priorityShort, statusLabel, timeAgo } from '@/lib/dashboard/format'
@@ -491,6 +493,14 @@ function IdeaDetailContent() {
         </div>
       </div>
 
+      <IdeaSmartAlerts
+        ideaId={ideaId}
+        idea={idea}
+        phases={phases}
+        features={features}
+        competitors={competitors}
+      />
+
       {showExportPanel && (
         <div className="idea-export-banner dash-card">
           <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Export idea</div>
@@ -673,6 +683,7 @@ function IdeaDetailContent() {
                     </div>
                   )}
                 </div>
+                <RelatedIdeasSection ideaId={ideaId} onError={setError} />
               </div>
             </div>
           )}

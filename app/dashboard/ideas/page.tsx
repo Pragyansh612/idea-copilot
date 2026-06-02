@@ -1,11 +1,12 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { CategoryAPI, IdeaAPI, type Category, type Idea } from '@/lib/api/idea'
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
 import { ideaScore, matchesStatusFilter, statusBadge, statusLabel, timeAgo } from '@/lib/dashboard/format'
 import { fetchReadinessMapForIdeas, type ReadinessSignals } from '@/lib/dashboard/readiness'
+import { founderBucketFor, type FounderBucket } from '@/lib/dashboard/workspace-intelligence'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
@@ -21,8 +22,28 @@ function emptySignals(): ReadinessSignals {
   }
 }
 
+const BUCKET_LABELS: Record<FounderBucket, string> = {
+  ready: 'Ready to build',
+  work: 'Need work',
+  attention: 'Need attention',
+}
+
 export default function MyIdeasPage() {
+  return (
+    <Suspense fallback={<PageLoading label="Loading ideas…" />}>
+      <MyIdeasContent />
+    </Suspense>
+  )
+}
+
+function MyIdeasContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const bucketParam = searchParams.get('bucket') as FounderBucket | null
+  const bucket =
+    bucketParam === 'ready' || bucketParam === 'work' || bucketParam === 'attention'
+      ? bucketParam
+      : null
   const [view, setView] = useState<'grid' | 'list'>('grid')
   const [filter, setFilter] = useState('All')
   const [cat, setCat] = useState('all')
@@ -60,18 +81,28 @@ export default function MyIdeasPage() {
     ...categories.map(c => ({ id: c.id, name: c.name })),
   ]
 
-  const list = ideas.filter(i => {
-    const catMatch = cat === 'all' || i.category_id === cat
-    return matchesStatusFilter(i, filter) && catMatch
-  })
+  const list = useMemo(() => {
+    return ideas.filter(i => {
+      const catMatch = cat === 'all' || i.category_id === cat
+      if (!matchesStatusFilter(i, filter) || !catMatch) return false
+      if (bucket) return founderBucketFor(i, readinessByIdea) === bucket
+      return true
+    })
+  }, [ideas, cat, filter, bucket, readinessByIdea])
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <div className="ph-eyebrow">My Ideas · {ideas.length} total</div>
+          <div className="ph-eyebrow">
+            My Ideas · {list.length} shown{bucket ? ` · ${BUCKET_LABELS[bucket]}` : ` · ${ideas.length} total`}
+          </div>
           <h1>Every spark you&apos;ve <em>filed</em>.</h1>
-          <div className="ph-sub">Each card shows Startup Readiness — your path from idea to validated market.</div>
+          <div className="ph-sub">
+            {bucket
+              ? `Filtered by readiness: ${BUCKET_LABELS[bucket].toLowerCase()}.`
+              : 'Each card shows Startup Readiness — your path from idea to validated market.'}
+          </div>
         </div>
         <div className="page-head-actions">
           <button className="btn-sm ghost" onClick={() => router.push(routes.copilot)}><DI.Spark/> Ask Copilot</button>
@@ -91,6 +122,11 @@ export default function MyIdeasPage() {
           <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}><DI.List/> List</button>
         </div>
         <div className="chips">
+          {bucket && (
+            <button type="button" className="chip on" onClick={() => router.push(routes.ideas)}>
+              Clear bucket filter ×
+            </button>
+          )}
           {FILTERS.map(f => <button key={f} className={`chip ${filter === f ? 'on' : ''}`} onClick={() => setFilter(f)}>{f}</button>)}
           <span style={{ width: 1, height: 18, background: 'var(--line-2)', margin: '0 4px' }}/>
           {categoryOptions.map(c => (

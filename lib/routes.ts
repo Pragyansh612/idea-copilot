@@ -8,6 +8,8 @@ export const routes = {
   productRoadmaps: '/product/roadmaps',
   dashboard: '/dashboard',
   ideas: '/dashboard/ideas',
+  ideasWithBucket: (bucket: 'ready' | 'work' | 'attention') =>
+    `/dashboard/ideas?bucket=${bucket}`,
   newIdea: '/dashboard/ideas/new',
   idea: (id: string) => `/dashboard/ideas/${id}`,
   ideaTab: (id: string, tab: string, query?: Record<string, string>) => {
