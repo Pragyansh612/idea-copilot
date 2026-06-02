@@ -56,7 +56,9 @@ function SignupForm() {
   useEffect(() => {
     let cancelled = false
     async function checkExistingSession() {
-      if (!TokenManager.isAuthenticated()) {
+      const token = TokenManager.getAccessToken()
+      if (!token) {
+        await clearSession()
         if (!cancelled) setIsCheckingAuth(false)
         return
       }
@@ -79,7 +81,7 @@ function SignupForm() {
 
     try {
       const response = await AuthAPI.signup({
-        email,
+        email: email.trim().toLowerCase(),
         password: pass,
         display_name: name.trim() || undefined,
       })
@@ -143,7 +145,8 @@ function SignupForm() {
           <label style={labelStyle}>Email</label>
           <input type="email" style={inputStyle} value={email} onChange={e => setEmail(e.target.value)} required disabled={isLoading} />
           <label style={labelStyle}>Password</label>
-          <input type="password" style={inputStyle} value={pass} onChange={e => setPass(e.target.value)} required minLength={6} disabled={isLoading} />
+          <input type="password" style={inputStyle} value={pass} onChange={e => setPass(e.target.value)} required minLength={6} autoComplete="new-password" disabled={isLoading} />
+          <p style={{ fontSize: 12, color: 'var(--fg-3)', margin: '-6px 0 0' }}>At least 6 characters.</p>
           {err && <div style={{ fontSize: 12.5, color: 'var(--warn)', fontFamily: 'var(--font-mono)' }}>{err}</div>}
           <button type="submit" disabled={isLoading} style={{ marginTop: 4, padding: '12px 20px', borderRadius: 10, background: 'var(--fg)', color: 'var(--bg)', fontWeight: 500, border: 0, cursor: isLoading ? 'wait' : 'pointer' }}>
             {isLoading ? 'Creating account…' : 'Create workspace →'}

@@ -61,7 +61,9 @@ function LoginForm() {
   useEffect(() => {
     let cancelled = false
     async function checkExistingSession() {
-      if (!TokenManager.isAuthenticated()) {
+      const token = TokenManager.getAccessToken()
+      if (!token) {
+        await clearSession()
         if (!cancelled) setIsCheckingAuth(false)
         return
       }
@@ -83,7 +85,7 @@ function LoginForm() {
     setIsLoading(true)
 
     try {
-      const response = await AuthAPI.login({ email, password: pass })
+      const response = await AuthAPI.login({ email: email.trim().toLowerCase(), password: pass })
       const access_token = response?.data?.session?.access_token
       const refresh_token = response?.data?.session?.refresh_token
 

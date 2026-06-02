@@ -1,4 +1,5 @@
 import { fetchWithAuth } from './http';
+import { parseApiError } from './parse-error';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
@@ -63,8 +64,8 @@ export class AuthAPI {
     });
 
     if (!response.ok) {
-      const error: ApiError = await response.json();
-      throw new Error(error.message || error.detail || 'Signup failed');
+      const error = await response.json().catch(() => ({}));
+      throw new Error(parseApiError(error) || 'Signup failed');
     }
 
     return response.json();
@@ -80,8 +81,8 @@ export class AuthAPI {
     });
 
     if (!response.ok) {
-      const error: ApiError = await response.json();
-      throw new Error(error.message || error.detail || 'Login failed');
+      const error = await response.json().catch(() => ({}));
+      throw new Error(parseApiError(error) || 'Login failed');
     }
 
     const result = await response.json();
