@@ -161,7 +161,7 @@ export function generateWorkspaceInsights(
       })
     }
 
-    if (pct > 80) {
+    if (pct >= 80) {
       insights.push({
         id: `ready-${idea.id}`,
         message: `${idea.title} is ${pct}% ready. What's holding you back from building it?`,

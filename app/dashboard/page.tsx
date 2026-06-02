@@ -125,7 +125,8 @@ export default function DashboardHome() {
 
   const showCompetitorNudge =
     competitorNudge &&
-    !(nextAction?.step === 'competitors' && nextActionIdeaId === competitorNudge.id)
+    !(nextAction?.step === 'competitors' && nextActionIdeaId === competitorNudge.id) &&
+    !insights.some(i => i.id === `missing-research-${competitorNudge.id}`)
 
   return (
     <div className="page">

@@ -55,7 +55,7 @@ export function RelatedIdeasSection({ ideaId, onError }: Props) {
     try {
       setFinding(true)
       const result = await RelatedIdeaAPI.getRecommendations(ideaId, 5, false)
-      setRecommendations(result.recommendations.filter(r => !r.is_already_connected))
+      setRecommendations((result.recommendations ?? []).filter(r => !r.is_already_connected))
     } catch (err) {
       onError?.(err instanceof Error ? err.message : 'Failed to find related ideas')
     } finally {

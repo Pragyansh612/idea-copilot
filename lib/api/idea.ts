@@ -533,7 +533,11 @@ export class RelatedIdeaAPI {
     const result = await fetchWithAuth(
       `${API_URL}/api/related-ideas/recommendations/${ideaId}?top_n=${topN}&auto_create=${autoCreate}`
     );
-    return result.data;
+    const data = result.data as RecommendationList | { recommendations?: RecommendationItem[]; total?: number }
+    if (data && Array.isArray(data.recommendations)) {
+      return data as RecommendationList
+    }
+    return { recommendations: [], total: 0 }
   }
 }
 

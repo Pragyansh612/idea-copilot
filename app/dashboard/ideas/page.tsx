@@ -51,6 +51,7 @@ function MyIdeasContent() {
   const [readinessByIdea, setReadinessByIdea] = useState<Map<string, ReadinessSignals>>(new Map())
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
+  const [readinessReady, setReadinessReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function load() {
@@ -63,8 +64,10 @@ function MyIdeasContent() {
       ])
       setCategories(cats)
       setIdeas(result.ideas)
+      setReadinessReady(false)
       const snapshots = await fetchReadinessMapForIdeas(result.ideas, { activeOnly: false })
       setReadinessByIdea(snapshots)
+      setReadinessReady(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ideas')
     } finally {
@@ -85,10 +88,13 @@ function MyIdeasContent() {
     return ideas.filter(i => {
       const catMatch = cat === 'all' || i.category_id === cat
       if (!matchesStatusFilter(i, filter) || !catMatch) return false
-      if (bucket) return founderBucketFor(i, readinessByIdea) === bucket
+      if (bucket) {
+        if (!readinessReady) return false
+        return founderBucketFor(i, readinessByIdea) === bucket
+      }
       return true
     })
-  }, [ideas, cat, filter, bucket, readinessByIdea])
+  }, [ideas, cat, filter, bucket, readinessByIdea, readinessReady])
 
   return (
     <div className="page">
@@ -112,9 +118,11 @@ function MyIdeasContent() {
 
       {error && <PageError message={error} onRetry={load} />}
 
-      {loading && !error && <PageLoading label="Loading ideas…" />}
+      {(loading || (bucket && !readinessReady)) && !error && (
+        <PageLoading label={bucket ? 'Applying readiness filter…' : 'Loading ideas…'} />
+      )}
 
-      {!error && !loading && (
+      {!error && !loading && !(bucket && !readinessReady) && (
       <>
       <div className="ideas-filterbar">
         <div className="seg">
@@ -122,6 +130,16 @@ function MyIdeasContent() {
           <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}><DI.List/> List</button>
         </div>
         <div className="chips">
+          {(['ready', 'work', 'attention'] as const).map(b => (
+            <button
+              key={b}
+              type="button"
+              className={`chip ${bucket === b ? 'on' : ''}`}
+              onClick={() => router.push(routes.ideasWithBucket(b))}
+            >
+              {BUCKET_LABELS[b]}
+            </button>
+          ))}
           {bucket && (
             <button type="button" className="chip on" onClick={() => router.push(routes.ideas)}>
               Clear bucket filter ×

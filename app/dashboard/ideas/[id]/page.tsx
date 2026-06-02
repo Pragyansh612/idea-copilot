@@ -523,7 +523,7 @@ function IdeaDetailContent() {
 
       <div className="idea-detail">
         <div className="id-left">
-          <div className="id-hero">
+          <div className="id-hero dash-card">
             <span className="id-tag">{statusLabel(idea.status)} · {idea.priority} priority</span>
             <h2>{idea.title}</h2>
             <p>{idea.description}</p>
