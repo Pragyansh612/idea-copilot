@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { CommentAPI, type Comment } from '@/lib/api/comment'
 import { timeAgo } from '@/lib/dashboard/format'
 import * as DI from '@/components/dashboard/Icons'
@@ -91,7 +91,7 @@ export function CommentsSection({ ideaId, currentUserId }: Props) {
   const [error, setError] = useState<string | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
-  async function load() {
+  const load = useCallback(async () => {
     try {
       setLoading(true)
       setError(null)
@@ -102,9 +102,9 @@ export function CommentsSection({ ideaId, currentUserId }: Props) {
     } finally {
       setLoading(false)
     }
-  }
+  }, [ideaId])
 
-  useEffect(() => { load() }, [ideaId])
+  useEffect(() => { void load() }, [load])
 
   async function submit() {
     const content = text.trim()

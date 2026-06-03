@@ -1,11 +1,13 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { AuthAPI } from '@/lib/api/auth'
+import { IdeaAPI } from '@/lib/api/idea'
 import { UserAPI, type UserProfile } from '@/lib/api/user'
 import SettingsApiTokens from '@/components/dashboard/SettingsApiTokens'
 import { PageError, PageLoading } from '@/components/dashboard/PageState'
 import { Toast } from '@/components/dashboard/Toast'
 import { displayName } from '@/lib/dashboard/format'
+import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 import type { ReactNode } from 'react'
 
@@ -55,6 +57,7 @@ export default function SettingsPage() {
   const [section, setSection] = useState('account')
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [accountEmail, setAccountEmail] = useState<string>('')
+  const [ideaCount, setIdeaCount] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reasoning, setReasoning] = useState(true)
@@ -74,12 +77,14 @@ export default function SettingsPage() {
     try {
       setLoading(true)
       setError(null)
-      const [prof, me] = await Promise.all([
+      const [prof, me, ideasRes] = await Promise.all([
         UserAPI.getProfile(),
         AuthAPI.getMe().catch(() => null),
+        IdeaAPI.getIdeas({ limit: 1 }).catch(() => null),
       ])
       setProfile(prof)
       setAccountEmail(me?.email ?? prof.email ?? '')
+      if (ideasRes) setIdeaCount(ideasRes.total)
       setProfileForm({
         display_name: prof.display_name ?? '',
         username: prof.username ?? '',
@@ -206,9 +211,27 @@ export default function SettingsPage() {
               </div>
             </SetCard>
           ) : section === 'workspace' ? (
-            <SetCard title="Workspace" desc="Your personal IdeaCopilot workspace.">
-              <Field label="Display name"><input style={inp} readOnly value={profile?.display_name ?? name}/></Field>
-              <Field label="Username"><input style={inp} readOnly value={profile?.username ?? '—'} placeholder="Not set"/></Field>
+            <SetCard title="Workspace" desc="Your personal IdeaCopilot workspace summary.">
+              <Field label="Ideas">
+                <span style={{ fontSize: 14, color: 'var(--fg)' }}>
+                  {ideaCount === null ? '—' : `${ideaCount} idea${ideaCount !== 1 ? 's' : ''}`}
+                </span>
+              </Field>
+              <Field label="Member since">
+                <span style={{ fontSize: 14, color: 'var(--fg)' }}>
+                  {profile?.created_at
+                    ? new Date(profile.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })
+                    : '—'}
+                </span>
+              </Field>
+              <Field label="Timezone">
+                <span style={{ fontSize: 14, color: 'var(--fg)' }}>{profile?.timezone ?? 'UTC'}</span>
+              </Field>
+              <Field label="Plan">
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, padding: '3px 9px', borderRadius: 999, background: 'color-mix(in srgb, var(--accent) 10%, transparent)', border: '1px solid var(--accent-line)', color: 'var(--accent)' }}>
+                  Free
+                </span>
+              </Field>
             </SetCard>
           ) : section === 'tokens' ? (
             <SetCard title="API tokens" desc="Manage programmatic access to your workspace.">
@@ -221,8 +244,30 @@ export default function SettingsPage() {
               <Field label="Hourly competitor refresh"><Toggle on={refresh} onChange={setRefresh}/></Field>
             </SetCard>
           ) : section === 'notifs' ? (
-            <SetCard title="Notifications" desc="Manage alerts in Notifications page.">
-              <p style={{ fontSize: 13, color: 'var(--fg-2)' }}>Notification delivery uses the backend notification service.</p>
+            <SetCard title="Notifications" desc="Manage alerts and inbox from your workspace.">
+              <Field label="Inbox">
+                <a
+                  href={routes.notifications}
+                  style={{ fontSize: 14, color: 'var(--accent)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  <DI.Bell /> Open Notifications
+                </a>
+              </Field>
+              <Field label="Sources" hint="Types of events that generate notifications">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {[
+                    ['Competitor moves', true],
+                    ['Market gap signals', true],
+                    ['AI suggestions', true],
+                    ['Idea milestones & achievements', true],
+                  ].map(([label, on]) => (
+                    <div key={String(label)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13, color: 'var(--fg)' }}>
+                      <span>{String(label)}</span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: on ? 'var(--good)' : 'var(--fg-3)' }}>{on ? 'ON' : 'OFF'}</span>
+                    </div>
+                  ))}
+                </div>
+              </Field>
             </SetCard>
           ) : null}
         </div>

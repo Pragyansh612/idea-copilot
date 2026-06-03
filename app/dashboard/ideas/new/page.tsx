@@ -22,6 +22,7 @@ export default function NewIdeaPage() {
   const router = useRouter()
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [targetMarket, setTargetMarket] = useState('')
   const [priority, setPriority] = useState<PriorityEnum>('medium')
   const [tags, setTags] = useState('')
   const [saving, setSaving] = useState(false)
@@ -39,6 +40,7 @@ export default function NewIdeaPage() {
       const idea = await IdeaAPI.createIdea({
         title: title.trim(),
         description: description.trim() || undefined,
+        target_market: targetMarket.trim() || undefined,
         priority,
         tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       })
@@ -76,6 +78,10 @@ export default function NewIdeaPage() {
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, textTransform: 'uppercase', color: 'var(--fg-3)' }}>Description</span>
           <textarea style={{ ...inp, minHeight: 120, resize: 'vertical' }} value={description} onChange={e => setDescription(e.target.value)} placeholder="What problem does it solve?" disabled={saving} />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, textTransform: 'uppercase', color: 'var(--fg-3)' }}>Target Market</span>
+          <input style={inp} value={targetMarket} onChange={e => setTargetMarket(e.target.value)} placeholder="Who is this for? e.g. Indie founders, B2B SaaS teams" disabled={saving} />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, textTransform: 'uppercase', color: 'var(--fg-3)' }}>Priority</span>

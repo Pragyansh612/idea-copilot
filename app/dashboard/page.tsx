@@ -13,6 +13,7 @@ import { phaseProgress } from '@/lib/dashboard/phase-progress'
 import {
   buildDashboardNextAction,
   dashboardNextActionRoute,
+  emptySignals,
   fetchReadinessMapForIdeas,
   pickLowestReadinessIdea,
   type ReadinessSignals,
@@ -155,11 +156,11 @@ export default function DashboardHome() {
       {!loading && ideas.length > 0 && <WorkspaceHealthCard health={workspaceHealth} />}
 
       <div className="dash-card next-action-hero">
-        <div className="eyebrow-mono">Recommended next step</div>
+        <div className="eyebrow-mono">Recommended next step · {nextActionPercent}% ready</div>
         {nextAction ? (
           <>
             <h2>
-              Recommended next step: <em>{nextAction.actionLabel}</em> for {nextAction.ideaTitle}
+              <em>{nextAction.actionLabel}</em> for {nextAction.ideaTitle}
             </h2>
             <p>{nextAction.detail}</p>
             <div className="next-action-hero-actions">
@@ -310,12 +311,3 @@ export default function DashboardHome() {
   )
 }
 
-function emptySignals(): ReadinessSignals {
-  return {
-    hasDescription: false,
-    hasFeatures: false,
-    hasPhases: false,
-    hasCompetitors: false,
-    hasMarketGap: false,
-  }
-}

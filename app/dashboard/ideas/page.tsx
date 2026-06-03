@@ -6,22 +6,12 @@ import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageSt
 import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
 import { ChatImportModal } from '@/components/dashboard/ChatImportModal'
 import { ideaScore, matchesStatusFilter, statusBadge, statusLabel, timeAgo } from '@/lib/dashboard/format'
-import { fetchReadinessMapForIdeas, type ReadinessSignals } from '@/lib/dashboard/readiness'
+import { emptySignals, fetchReadinessMapForIdeas, type ReadinessSignals } from '@/lib/dashboard/readiness'
 import { founderBucketFor, type FounderBucket } from '@/lib/dashboard/workspace-intelligence'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
 const FILTERS = ['All', 'Active', 'Validating', 'Draft', 'Stalled']
-
-function emptySignals(): ReadinessSignals {
-  return {
-    hasDescription: false,
-    hasFeatures: false,
-    hasPhases: false,
-    hasCompetitors: false,
-    hasMarketGap: false,
-  }
-}
 
 const BUCKET_LABELS: Record<FounderBucket, string> = {
   ready: 'Ready to build',

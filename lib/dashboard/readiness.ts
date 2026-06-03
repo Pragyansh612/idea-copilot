@@ -11,6 +11,16 @@ export type ReadinessSignals = {
   hasMarketGap: boolean
 }
 
+export function emptySignals(): ReadinessSignals {
+  return {
+    hasDescription: false,
+    hasFeatures: false,
+    hasPhases: false,
+    hasCompetitors: false,
+    hasMarketGap: false,
+  }
+}
+
 export type ReadinessStepKey = 'describe' | 'features' | 'roadmap' | 'competitors' | 'market'
 
 export type ReadinessItem = {

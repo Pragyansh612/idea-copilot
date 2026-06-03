@@ -6,7 +6,7 @@ import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageSt
 import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
 import { IdeaAPI, PhaseAPI, type Idea, type Phase } from '@/lib/api/idea'
 import { phaseProgress } from '@/lib/dashboard/phase-progress'
-import { fetchReadinessMapForIdeas, type ReadinessSignals } from '@/lib/dashboard/readiness'
+import { emptySignals, fetchReadinessMapForIdeas, type ReadinessSignals } from '@/lib/dashboard/readiness'
 import { statusBadge, statusLabel } from '@/lib/dashboard/format'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
@@ -15,16 +15,6 @@ type IdeaRoadmapRow = {
   idea: Idea
   phases: Phase[]
   progress: ReturnType<typeof phaseProgress>
-}
-
-function emptySignals(): ReadinessSignals {
-  return {
-    hasDescription: false,
-    hasFeatures: false,
-    hasPhases: false,
-    hasCompetitors: false,
-    hasMarketGap: false,
-  }
 }
 
 export default function RoadmapsPage() {

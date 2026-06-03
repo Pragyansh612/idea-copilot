@@ -216,6 +216,7 @@ export interface IdeaDetail {
 export interface IdeaCreate {
   title: string;
   description?: string;
+  target_market?: string;
   tags?: string[];
   category_id?: string;
   priority?: PriorityEnum;
