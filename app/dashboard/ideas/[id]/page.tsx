@@ -17,6 +17,8 @@ import {
 import { AttachmentAPI, type Attachment } from '@/lib/api/attachments'
 import { ExportAPI } from '@/lib/api/export'
 import { CopilotAPI } from '@/lib/api/copilot'
+import { CommentsSection } from '@/components/dashboard/CommentsSection'
+import { ShareModal } from '@/components/dashboard/ShareModal'
 import { MarketGapResults } from '@/components/dashboard/MarketGapResults'
 import { Toast } from '@/components/dashboard/Toast'
 import { normalizeGaps, type GapItem } from '@/lib/dashboard/gaps'
@@ -32,7 +34,7 @@ import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContex
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
-const VALID_TABS = ['overview', 'roadmap', 'intelligence', 'copilot', 'attachments'] as const
+const VALID_TABS = ['overview', 'roadmap', 'intelligence', 'copilot', 'attachments', 'discussion'] as const
 const SUGGESTION_TYPES: AIGenerateRequest['suggestion_type'][] = ['features', 'phases', 'improvements', 'marketing', 'validation']
 
 export default function IdeaDetailPage() {
@@ -48,7 +50,9 @@ function IdeaDetailContent() {
   const params = useParams()
   const searchParams = useSearchParams()
   const ideaId = params.id as string
-  const [tab, setTab] = useState<'overview' | 'roadmap' | 'intelligence' | 'copilot' | 'attachments'>('overview')
+  const [tab, setTab] = useState<'overview' | 'roadmap' | 'intelligence' | 'copilot' | 'attachments' | 'discussion'>('overview')
+  const [showShare, setShowShare] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>()
   const [idea, setIdea] = useState<Idea | null>(null)
   const [features, setFeatures] = useState<Feature[]>([])
   const [phases, setPhases] = useState<Phase[]>([])
@@ -125,11 +129,13 @@ function IdeaDetailContent() {
       setLoading(true)
       setError(null)
       const detail = await IdeaAPI.getIdea(ideaId)
-      const [sugs, comp, atts] = await Promise.all([
+      const [sugs, comp, atts, me] = await Promise.all([
         AIAPI.getSuggestions(ideaId).catch(() => []),
         CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] })),
         AttachmentAPI.listForIdea(ideaId).catch(() => []),
+        import('@/lib/api/auth').then(m => m.AuthAPI.getMe()).catch(() => null),
       ])
+      if (me) setCurrentUserId(me.id)
       setIdea(detail.idea)
       setIdeaDetailTitle(detail.idea.title)
       setDescriptionDraft(detail.idea.description || '')
@@ -487,11 +493,18 @@ function IdeaDetailContent() {
           >
             <DI.Folder/> Attachments
           </button>
+          <button type="button" className="btn-sm ghost" onClick={() => setShowShare(true)}>
+            <DI.Users/> Share
+          </button>
           <button type="button" className="btn-sm solid" onClick={() => router.push(routes.copilotForIdea(ideaId))}>
             <DI.Spark/> Ask Copilot
           </button>
         </div>
       </div>
+
+      {showShare && (
+        <ShareModal ideaId={ideaId} ideaTitle={idea.title} onClose={() => setShowShare(false)} />
+      )}
 
       <IdeaSmartAlerts
         ideaId={ideaId}
@@ -566,6 +579,7 @@ function IdeaDetailContent() {
               { id: 'intelligence', label: 'Intelligence', count: String(competitors.length) },
               { id: 'copilot', label: 'Copilot', count: '' },
               { id: 'attachments', label: 'Attachments', count: String(attachments.length) },
+              { id: 'discussion', label: 'Discussion', count: '' },
             ].map(t => (
               <button
                 key={t.id}
@@ -902,6 +916,11 @@ function IdeaDetailContent() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+          {tab === 'discussion' && (
+            <div className="id-panel">
+              <CommentsSection ideaId={ideaId} currentUserId={currentUserId} />
             </div>
           )}
         </div>

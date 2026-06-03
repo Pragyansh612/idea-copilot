@@ -259,6 +259,14 @@ export interface PaginatedIdeas {
   has_more: boolean;
 }
 
+export interface IdeaSearchResult {
+  id: string;
+  title: string;
+  description?: string | null;
+  status?: StatusEnum | null;
+  created_at?: string | null;
+}
+
 // ==================== PHASE TYPES ====================
 
 export interface Phase {
@@ -466,6 +474,52 @@ export class IdeaAPI {
     await fetchWithAuth(`${API_URL}/api/ideas/${ideaId}`, {
       method: 'DELETE',
     });
+  }
+
+  static async searchIdeas(
+    q: string,
+    limit = 12,
+    offset = 0
+  ): Promise<{ ideas: IdeaSearchResult[]; total: number; query: string }> {
+    const params = new URLSearchParams({
+      q: q.trim(),
+      limit: String(limit),
+      offset: String(offset),
+    });
+    const result = await fetchWithAuth(`${API_URL}/api/ideas/search?${params}`);
+    const data = result.data as {
+      ideas?: IdeaSearchResult[];
+      total?: number;
+      query?: string;
+    };
+    return {
+      ideas: data.ideas ?? [],
+      total: data.total ?? 0,
+      query: data.query ?? q.trim(),
+    };
+  }
+
+  static async getArchivedIdeas(limit = 50, offset = 0): Promise<PaginatedIdeas> {
+    const params = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+    });
+    const result = await fetchWithAuth(`${API_URL}/api/ideas/archived?${params}`);
+    return result.data;
+  }
+
+  static async archiveIdea(ideaId: string): Promise<Idea> {
+    const result = await fetchWithAuth(`${API_URL}/api/ideas/${ideaId}/archive`, {
+      method: 'POST',
+    });
+    return result.data.idea;
+  }
+
+  static async restoreIdea(ideaId: string): Promise<Idea> {
+    const result = await fetchWithAuth(`${API_URL}/api/ideas/${ideaId}/restore`, {
+      method: 'POST',
+    });
+    return result.data.idea;
   }
 
   static async marketGapAnalysis(ideaId: string): Promise<unknown> {

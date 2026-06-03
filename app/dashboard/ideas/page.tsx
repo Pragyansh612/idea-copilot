@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { CategoryAPI, IdeaAPI, type Category, type Idea } from '@/lib/api/idea'
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
+import { ChatImportModal } from '@/components/dashboard/ChatImportModal'
 import { ideaScore, matchesStatusFilter, statusBadge, statusLabel, timeAgo } from '@/lib/dashboard/format'
 import { fetchReadinessMapForIdeas, type ReadinessSignals } from '@/lib/dashboard/readiness'
 import { founderBucketFor, type FounderBucket } from '@/lib/dashboard/workspace-intelligence'
@@ -53,6 +54,7 @@ function MyIdeasContent() {
   const [loading, setLoading] = useState(true)
   const [readinessReady, setReadinessReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showImport, setShowImport] = useState(false)
 
   async function load() {
     try {
@@ -111,10 +113,18 @@ function MyIdeasContent() {
           </div>
         </div>
         <div className="page-head-actions">
+          <button className="btn-sm ghost" onClick={() => setShowImport(true)}><DI.Chat/> Import from AI chat</button>
           <button className="btn-sm ghost" onClick={() => router.push(routes.copilot)}><DI.Spark/> Ask Copilot</button>
           <button className="btn-sm solid" onClick={() => router.push(routes.newIdea)}><DI.Plus/> New idea</button>
         </div>
       </div>
+
+      {showImport && (
+        <ChatImportModal
+          onClose={() => setShowImport(false)}
+          onDone={() => { setShowImport(false); load() }}
+        />
+      )}
 
       {error && <PageError message={error} onRetry={load} />}
 
