@@ -288,6 +288,9 @@ export default function DashboardHome() {
             <p className="founder-progress-title">Founder Progress</p>
             <p className="founder-progress-meta">{xp} XP · level {level}</p>
           </div>
+          <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.achievements)}>
+            <DI.Bolt /> All achievements
+          </button>
         </div>
         <div className="founder-progress-achievements">
           {recentAchievements.length > 0 ? (

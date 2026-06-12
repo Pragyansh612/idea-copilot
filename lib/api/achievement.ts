@@ -29,12 +29,12 @@ export interface AchievementResponse extends Achievement {
 
 export class AchievementAPI {
   static async getUserAchievements(): Promise<AchievementResponse[]> {
-    const result = await fetchWithAuth(`${API_URL}/api/achievements`);
-    return result.data.achievements;
+    const result = await fetchWithAuth(`${API_URL}/api/achievements`)
+    return result.data?.achievements ?? []
   }
 
   static async getAllAchievements(): Promise<AchievementDefinition[]> {
-    const result = await fetchWithAuth(`${API_URL}/api/achievements/all`);
-    return result.data.achievements;
+    const result = await fetchWithAuth(`${API_URL}/api/achievements/all`)
+    return result.data?.achievements ?? []
   }
 }

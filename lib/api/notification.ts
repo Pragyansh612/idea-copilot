@@ -3,15 +3,20 @@ import { fetchWithAuth } from './http';
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 export interface Notification {
-  id: string;
-  user_id: string;
-  type: string;
-  title: string;
-  message: string;
-  is_read: boolean;
-  read_at?: string;
-  data?: Record<string, any>;
-  created_at: string;
+  id: string
+  user_id: string
+  type: string
+  title: string
+  message: string
+  is_read: boolean
+  read_at?: string
+  related_idea_id?: string | null
+  related_entity_type?: string | null
+  related_entity_id?: string | null
+  action_url?: string | null
+  priority?: string
+  data?: Record<string, unknown>
+  created_at: string
 }
 
 export interface MotivationRequest {

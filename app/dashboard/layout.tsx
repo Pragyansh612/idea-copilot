@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import ThemeToggle from '@/components/ThemeToggle'
+import { WorkspaceSearch } from '@/components/dashboard/WorkspaceSearch'
 import { DashboardChromeProvider, useDashboardChrome } from '@/components/dashboard/DashboardChromeContext'
 import { isUuid } from '@/lib/dashboard/format'
 import { useAuth } from '@/hooks/useAuth'
@@ -54,6 +55,7 @@ function getCrumbs(pathname: string, ideaDetailTitle: string | null): string[] {
   if (pathname === routes.gaps) return ['Market Gaps']
   if (pathname === routes.copilot) return ['Copilot']
   if (pathname === routes.notifications) return ['Notifications']
+  if (pathname === routes.achievements) return ['Achievements']
   if (pathname === routes.settings) return ['Settings']
   if (pathname === routes.exports) return ['Exports']
   const r = ROUTES.find(item => item.href === pathname)
@@ -184,10 +186,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             ))}
           </div>
 
-          <div className="tb-search" title="Search coming soon">
-            <DI.Search />
-            <input placeholder="Search (coming soon)" disabled aria-disabled="true" />
-          </div>
+          <WorkspaceSearch />
 
           <div className="tb-actions">
             <button className="tb-cta" onClick={() => router.push(routes.newIdea)}>
@@ -195,7 +194,11 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
             </button>
             <div className="tb-divider" />
             <button className="tb-btn" title="AI Copilot" onClick={() => router.push(routes.copilot)}><DI.Bolt /></button>
-            <button className="tb-btn has-dot" onClick={() => router.push(routes.notifications)} title="Notifications">
+            <button
+              className={`tb-btn ${unreadCount > 0 ? 'has-dot' : ''}`}
+              onClick={() => router.push(routes.notifications)}
+              title={unreadCount > 0 ? `${unreadCount} unread notifications` : 'Notifications'}
+            >
               <DI.Bell />
             </button>
             <ThemeToggle className="tb-btn" />
