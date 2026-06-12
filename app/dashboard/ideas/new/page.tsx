@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { IdeaAPI, type PriorityEnum } from '@/lib/api/idea'
+import { ChatImportModal } from '@/components/dashboard/ChatImportModal'
 import { draftFromForm, saveIdeaDraft } from '@/lib/copilot/idea-draft'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
@@ -27,6 +28,7 @@ export default function NewIdeaPage() {
   const [tags, setTags] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showImport, setShowImport] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -54,6 +56,15 @@ export default function NewIdeaPage() {
 
   return (
     <div className="page page-narrow">
+      {showImport && (
+        <ChatImportModal
+          onClose={() => setShowImport(false)}
+          onDone={() => {
+            setShowImport(false)
+            router.push(routes.ideas)
+          }}
+        />
+      )}
       <div className="page-head">
         <div>
           <div className="ph-eyebrow">New idea</div>
@@ -61,6 +72,9 @@ export default function NewIdeaPage() {
           <div className="ph-sub">After you create, we&apos;ll open your idea with a guided checklist for what to do next.</div>
         </div>
         <div className="page-head-actions">
+          <button type="button" className="btn-sm ghost" onClick={() => setShowImport(true)}>
+            <DI.Chat /> Import from chat
+          </button>
           <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideas)}>
             <DI.CaretRight style={{ transform: 'rotate(180deg)' }}/> Back
           </button>

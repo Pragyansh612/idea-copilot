@@ -107,7 +107,7 @@ function SignupForm() {
       }
 
       await new Promise(resolve => setTimeout(resolve, 150))
-      window.location.href = routes.dashboard
+      window.location.href = routes.newIdea
     } catch (error) {
       setErr(error instanceof Error ? error.message : 'Signup failed. Please try again.')
     } finally {
@@ -137,7 +137,12 @@ function SignupForm() {
         <h2 style={{ fontWeight: 400, fontSize: 28, letterSpacing: '-0.03em', marginBottom: 6 }}>
           Start your <em style={{ fontFamily: 'var(--font-serif)', fontStyle: 'italic', color: 'var(--accent)' }}>lab</em>.
         </h2>
-        <p style={{ fontSize: 14, color: 'var(--fg-2)', marginBottom: 28 }}>Create a free workspace account.</p>
+        <p style={{ fontSize: 14, color: 'var(--fg-2)', marginBottom: 8, lineHeight: 1.5 }}>
+          Create a free workspace account.
+        </p>
+        <p style={{ fontSize: 13, color: 'var(--fg-3)', marginBottom: 28, lineHeight: 1.5 }}>
+          After signup you&apos;ll capture your first idea and get a guided checklist.
+        </p>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           <label style={labelStyle}>Name</label>

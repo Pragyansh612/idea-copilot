@@ -158,11 +158,25 @@ function MyIdeasContent() {
         <PageEmpty
           icon={<DI.Bulb />}
           title={ideas.length === 0 ? 'No ideas yet' : 'No ideas match this filter'}
-          description={ideas.length === 0 ? 'Capture your first spark or refine one with Copilot.' : 'Try widening your filter or create a new idea.'}
+          description={ideas.length === 0 ? 'Capture your first spark, import an AI chat, or brainstorm with Copilot.' : 'Try widening your filter or create a new idea.'}
           action={
-            <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
-              <DI.Plus /> New idea
-            </button>
+            ideas.length === 0 ? (
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+                <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
+                  <DI.Plus /> New idea
+                </button>
+                <button type="button" className="btn-sm ghost" onClick={() => setShowImport(true)}>
+                  <DI.Chat /> Import from chat
+                </button>
+                <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.copilot)}>
+                  <DI.Spark /> Ask Copilot
+                </button>
+              </div>
+            ) : (
+              <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
+                <DI.Plus /> New idea
+              </button>
+            )
           }
         />
       ) : view === 'grid' ? (

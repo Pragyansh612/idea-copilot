@@ -3026,3 +3026,117 @@ body:has(.app) {
   background: var(--accent);
   flex-shrink: 0;
 }
+
+/* ── UX: Getting started + quick actions ───────────────── */
+.getting-started-card {
+  padding: 24px;
+  margin-bottom: 20px;
+}
+.getting-started-head h2 {
+  font-weight: 400;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  margin: 8px 0;
+}
+.getting-started-head h2 em {
+  font-family: var(--font-serif);
+  font-style: italic;
+  color: var(--accent);
+}
+.getting-started-head p {
+  font-size: 14px;
+  color: var(--fg-2);
+  margin: 0;
+  max-width: 52ch;
+  line-height: 1.5;
+}
+.getting-started-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+  margin-top: 20px;
+}
+.getting-started-step {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 16px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s, background 0.15s, transform 0.12s;
+}
+.getting-started-step:hover {
+  border-color: var(--accent-line);
+  background: var(--bg);
+  transform: translateY(-1px);
+}
+.getting-started-step.primary {
+  border-color: var(--accent-line);
+  background: color-mix(in srgb, var(--accent) 6%, var(--bg));
+}
+.getting-started-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.getting-started-icon svg { width: 16px; height: 16px; }
+.getting-started-title { font-size: 15px; font-weight: 500; color: var(--fg); }
+.getting-started-desc { font-size: 13px; color: var(--fg-2); line-height: 1.45; }
+.getting-started-action {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--accent);
+  margin-top: 4px;
+}
+
+.quick-actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.quick-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line-2);
+  background: var(--bg-2);
+  font-size: 13px;
+  color: var(--fg-2);
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.quick-action:hover {
+  border-color: var(--accent-line);
+  color: var(--fg);
+  background: var(--bg);
+}
+.quick-action svg { width: 14px; height: 14px; color: var(--accent); }
+
+.idea--clickable {
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.idea--clickable:hover {
+  border-color: var(--accent-line);
+  box-shadow: 0 4px 20px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.idea--clickable:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

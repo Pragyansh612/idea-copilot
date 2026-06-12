@@ -22,10 +22,12 @@ const ROUTES = [
   { id: 'home',     label: 'Dashboard',     icon: <DI.Home/>,   section: 'Workspace',     href: routes.dashboard, countKey: null as string | null },
   { id: 'ideas',    label: 'My Ideas',      icon: <DI.Bulb/>,   section: 'Workspace',     href: routes.ideas, countKey: 'ideas' },
   { id: 'roadmaps', label: 'Roadmaps',      icon: <DI.Route/>,  section: 'Workspace',     href: routes.roadmaps, countKey: null },
+  { id: 'exports',  label: 'Exports',       icon: <DI.Export/>, section: 'Workspace',     href: routes.exports, countKey: null },
   { id: 'comp',     label: 'Competitors',   icon: <DI.Radar/>,  section: 'Intelligence',  href: routes.competitors, countKey: null },
   { id: 'gaps',     label: 'Market Gaps',   icon: <DI.Target/>, section: 'Intelligence',  href: routes.gaps, countKey: null },
   { id: 'copilot',  label: 'Copilot',       icon: <DI.Spark/>,  section: 'AI',            href: routes.copilot, countKey: null },
   { id: 'notifs',   label: 'Notifications', icon: <DI.Bell/>,   section: 'Account',       href: routes.notifications, countKey: 'notifs' },
+  { id: 'achieve',  label: 'Achievements',  icon: <DI.Bolt/>,   section: 'Account',       href: routes.achievements, countKey: null },
   { id: 'settings', label: 'Settings',      icon: <DI.Cog/>,    section: 'Account',       href: routes.settings, countKey: null },
 ] as const
 
@@ -35,10 +37,12 @@ function getActiveId(pathname: string): string {
   if (pathname === routes.dashboard) return 'home'
   if (pathname.startsWith('/dashboard/ideas')) return 'ideas'
   if (pathname === routes.roadmaps || pathname.startsWith(`${routes.roadmaps}/`)) return 'roadmaps'
+  if (pathname === routes.exports) return 'exports'
   if (pathname.startsWith('/dashboard/competitors')) return 'comp'
   if (pathname.startsWith('/dashboard/gaps')) return 'gaps'
   if (pathname.startsWith('/dashboard/copilot')) return 'copilot'
   if (pathname.startsWith('/dashboard/notifications')) return 'notifs'
+  if (pathname === routes.achievements) return 'achieve'
   if (pathname.startsWith('/dashboard/settings')) return 'settings'
   return 'home'
 }

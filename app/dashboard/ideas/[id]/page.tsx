@@ -75,6 +75,7 @@ function IdeaDetailContent() {
   const [editingDescription, setEditingDescription] = useState(false)
   const [descriptionDraft, setDescriptionDraft] = useState('')
   const phaseNameRef = useRef<HTMLInputElement>(null)
+  const welcomedRef = useRef(false)
   const { setIdeaDetailTitle } = useDashboardChrome()
 
   useEffect(() => {
@@ -82,11 +83,19 @@ function IdeaDetailContent() {
   }, [setIdeaDetailTitle])
 
   useEffect(() => {
-    if (searchParams.get('created') === '1') {
-      setToast("Idea created. Here's what to do next.")
-      router.replace(routes.idea(ideaId), { scroll: false })
+    if (searchParams.get('created') !== '1' || loading || !idea || welcomedRef.current) return
+    welcomedRef.current = true
+    setToast('Idea created! Work through the checklist below — each step takes about a minute.')
+    setTab('overview')
+    if (!idea.description?.trim()) {
+      setDescriptionDraft('')
+      setEditingDescription(true)
     }
-  }, [searchParams, ideaId, router])
+    requestAnimationFrame(() => {
+      document.getElementById('readiness-checklist')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    })
+    router.replace(routes.idea(ideaId), { scroll: false })
+  }, [searchParams, loading, idea, ideaId, router])
 
   useEffect(() => {
     const t = searchParams.get('tab')
@@ -618,7 +627,7 @@ function IdeaDetailContent() {
                     ))}
                   </div>
                 </div>
-                <div className="dash-card" style={{ padding: 12 }}>
+                <div className="dash-card" style={{ padding: 12 }} id="readiness-checklist">
                   <div className="readiness-overview-row">
                     <div>
                       <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Startup Readiness</div>

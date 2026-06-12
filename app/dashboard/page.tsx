@@ -4,8 +4,10 @@ import { useRouter } from 'next/navigation'
 import { AuthAPI, type AuthUser } from '@/lib/api/auth'
 import { IdeaAPI, PhaseAPI, type Idea } from '@/lib/api/idea'
 import { FounderSummaryStrip } from '@/components/dashboard/FounderSummaryStrip'
+import { GettingStartedCard } from '@/components/dashboard/GettingStartedCard'
 import { InsightFeed } from '@/components/dashboard/InsightFeed'
-import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
+import { QuickActionsBar } from '@/components/dashboard/QuickActionsBar'
+import { PageError, PageLoading } from '@/components/dashboard/PageState'
 import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
 import { WorkspaceHealthCard } from '@/components/dashboard/WorkspaceHealthCard'
 import { displayName, statusBadge, timeAgo } from '@/lib/dashboard/format'
@@ -153,8 +155,16 @@ export default function DashboardHome() {
 
       {!loading && !error && (
       <>
-      {!loading && ideas.length > 0 && <WorkspaceHealthCard health={workspaceHealth} />}
+      {ideas.length === 0 ? (
+        <GettingStartedCard />
+      ) : (
+        <>
+          <QuickActionsBar />
+          <WorkspaceHealthCard health={workspaceHealth} />
+        </>
+      )}
 
+      {ideas.length > 0 && (
       <div className="dash-card next-action-hero">
         <div className="eyebrow-mono">Recommended next step · {nextActionPercent}% ready</div>
         {nextAction ? (
@@ -209,10 +219,11 @@ export default function DashboardHome() {
           </>
         )}
       </div>
+      )}
 
-      <InsightFeed insights={insights} />
+      {ideas.length > 0 && <InsightFeed insights={insights} />}
 
-      {showCompetitorNudge && competitorNudge && (
+      {ideas.length > 0 && showCompetitorNudge && competitorNudge && (
         <div className="dash-card competitor-nudge" style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
             <div>
@@ -234,53 +245,42 @@ export default function DashboardHome() {
         </div>
       )}
 
+      {ideas.length > 0 && (
       <div className="section-block">
         <div className="section-block-head">
           <h2>Recent <em>ideas</em></h2>
+          <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideas)}>View all</button>
         </div>
-        {recentIdeas.length === 0 ? (
-          <PageEmpty
-            icon={<DI.Bulb />}
-            title="No ideas yet"
-            description="Create your first idea to begin the guided founder flow."
-            action={
-              <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}>
-                <DI.Plus /> New idea
-              </button>
-            }
-          />
-        ) : (
-          <div className="ideas-grid">
-            {recentIdeas.map(i => {
-              const badge = statusBadge(i.status)
-              const progress = recentProgress[i.id] ?? { total: 0, completed: 0, percent: 0 }
-              const signals = readinessByIdea.get(i.id) ?? emptySignals()
-              return (
-                <div key={i.id} className="idea">
-                  <div className="i-row1">
-                    <span className={`i-tag ${badge.kind}`}>{badge.text}</span>
-                  </div>
-                  <h3>{i.title}</h3>
-                  <p className="i-desc">{i.description || 'No description yet.'}</p>
-                  <div className="i-prog"><div className="bar" style={{ width: `${progress.percent}%` }}/></div>
-                  <div className="i-foot">
-                    <span>{progress.percent}% roadmap</span>
-                    <span className="sep"/>
-                    <span>{timeAgo(i.updated_at)}</span>
-                  </div>
-                  <div className="idea-card-readiness">
-                    <StartupReadinessScore signals={signals} size="sm" />
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button type="button" className="btn-sm solid" onClick={() => router.push(routes.idea(i.id))}>Continue</button>
-                    </div>
-                  </div>
+        <div className="ideas-grid">
+          {recentIdeas.map(i => {
+            const badge = statusBadge(i.status)
+            const progress = recentProgress[i.id] ?? { total: 0, completed: 0, percent: 0 }
+            const signals = readinessByIdea.get(i.id) ?? emptySignals()
+            return (
+              <div key={i.id} className="idea idea--clickable" onClick={() => router.push(routes.idea(i.id))} role="link" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter') router.push(routes.idea(i.id)) }}>
+                <div className="i-row1">
+                  <span className={`i-tag ${badge.kind}`}>{badge.text}</span>
                 </div>
-              )
-            })}
-          </div>
-        )}
+                <h3>{i.title}</h3>
+                <p className="i-desc">{i.description || 'No description yet.'}</p>
+                <div className="i-prog"><div className="bar" style={{ width: `${progress.percent}%` }}/></div>
+                <div className="i-foot">
+                  <span>{progress.percent}% roadmap</span>
+                  <span className="sep"/>
+                  <span>{timeAgo(i.updated_at)}</span>
+                </div>
+                <div className="idea-card-readiness" onClick={e => e.stopPropagation()}>
+                  <StartupReadinessScore signals={signals} size="sm" />
+                  <button type="button" className="btn-sm solid" onClick={() => router.push(routes.idea(i.id))}>Continue</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
       </div>
+      )}
 
+      {ideas.length > 0 && (
       <div className="dash-card founder-progress">
         <div className="founder-progress-main">
           <div className="founder-progress-ring">L{level}</div>
@@ -308,6 +308,7 @@ export default function DashboardHome() {
           )}
         </div>
       </div>
+      )}
       </>
       )}
     </div>
