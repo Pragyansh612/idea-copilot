@@ -5,6 +5,8 @@ import { AuthAPI } from '@/lib/api/auth'
 import { IdeaAPI } from '@/lib/api/idea'
 import {
   SettingsAPI,
+  DEFAULT_AI_PREFERENCES,
+  DEFAULT_NOTIFICATION_PREFERENCES,
   type AiPreferences,
   type NotificationPreferences,
 } from '@/lib/api/settings'
@@ -111,14 +113,14 @@ function SettingsContent() {
         UserAPI.getProfile(),
         AuthAPI.getMe().catch(() => null),
         IdeaAPI.getIdeas({ limit: 1 }).catch(() => null),
-        SettingsAPI.getAiPreferences().catch(() => null),
-        SettingsAPI.getNotificationPreferences().catch(() => null),
+        SettingsAPI.getAiPreferences().catch(() => DEFAULT_AI_PREFERENCES),
+        SettingsAPI.getNotificationPreferences().catch(() => DEFAULT_NOTIFICATION_PREFERENCES),
       ])
       setProfile(prof)
       setAccountEmail(me?.email ?? prof.email ?? '')
       if (ideasRes) setIdeaCount(ideasRes.total)
-      if (ai) setAiPrefs(ai)
-      if (notifs) setNotifPrefs(notifs)
+      setAiPrefs(ai ?? DEFAULT_AI_PREFERENCES)
+      setNotifPrefs(notifs ?? DEFAULT_NOTIFICATION_PREFERENCES)
       setProfileForm({
         display_name: prof.display_name ?? '',
         username: prof.username ?? '',
@@ -317,13 +319,13 @@ function SettingsContent() {
           ) : section === 'ai' ? (
             <SetCard title="AI behavior" desc="Saved to your workspace via the settings API.">
               <Field label="Show reasoning steps">
-                <Toggle on={aiPrefs?.show_reasoning ?? true} onChange={v => void updateAiPref('show_reasoning', v)} disabled={savingPrefs || !aiPrefs} />
+                <Toggle on={aiPrefs?.show_reasoning ?? true} onChange={v => void updateAiPref('show_reasoning', v)} disabled={savingPrefs} />
               </Field>
               <Field label="Auto-refine new ideas">
-                <Toggle on={aiPrefs?.auto_refine ?? true} onChange={v => void updateAiPref('auto_refine', v)} disabled={savingPrefs || !aiPrefs} />
+                <Toggle on={aiPrefs?.auto_refine ?? true} onChange={v => void updateAiPref('auto_refine', v)} disabled={savingPrefs} />
               </Field>
               <Field label="Hourly competitor refresh">
-                <Toggle on={aiPrefs?.competitor_refresh ?? false} onChange={v => void updateAiPref('competitor_refresh', v)} disabled={savingPrefs || !aiPrefs} />
+                <Toggle on={aiPrefs?.competitor_refresh ?? false} onChange={v => void updateAiPref('competitor_refresh', v)} disabled={savingPrefs} />
               </Field>
             </SetCard>
           ) : section === 'notifs' ? (
@@ -334,16 +336,16 @@ function SettingsContent() {
                 </button>
               </Field>
               <Field label="Market gap alerts">
-                <Toggle on={notifPrefs?.market_gaps ?? true} onChange={v => void updateNotifPref('market_gaps', v)} disabled={savingPrefs || !notifPrefs} />
+                <Toggle on={notifPrefs?.market_gaps ?? true} onChange={v => void updateNotifPref('market_gaps', v)} disabled={savingPrefs} />
               </Field>
               <Field label="Competitor alerts">
-                <Toggle on={notifPrefs?.competitor_alerts ?? true} onChange={v => void updateNotifPref('competitor_alerts', v)} disabled={savingPrefs || !notifPrefs} />
+                <Toggle on={notifPrefs?.competitor_alerts ?? true} onChange={v => void updateNotifPref('competitor_alerts', v)} disabled={savingPrefs} />
               </Field>
               <Field label="AI suggestions">
-                <Toggle on={notifPrefs?.ai_suggestions ?? true} onChange={v => void updateNotifPref('ai_suggestions', v)} disabled={savingPrefs || !notifPrefs} />
+                <Toggle on={notifPrefs?.ai_suggestions ?? true} onChange={v => void updateNotifPref('ai_suggestions', v)} disabled={savingPrefs} />
               </Field>
               <Field label="Weekly digest">
-                <Toggle on={notifPrefs?.weekly_digest ?? false} onChange={v => void updateNotifPref('weekly_digest', v)} disabled={savingPrefs || !notifPrefs} />
+                <Toggle on={notifPrefs?.weekly_digest ?? false} onChange={v => void updateNotifPref('weekly_digest', v)} disabled={savingPrefs} />
               </Field>
             </SetCard>
           ) : null}

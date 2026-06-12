@@ -96,6 +96,7 @@ function IdeaDetailContent() {
       t === 'ai' ? 'copilot' :
       t === 'features' ? 'overview' :
       t === 'attachments' ? 'attachments' :
+      t === 'comments' ? 'discussion' :
       t
     if (mapped && (VALID_TABS as readonly string[]).includes(mapped)) {
       setTab(mapped as typeof tab)

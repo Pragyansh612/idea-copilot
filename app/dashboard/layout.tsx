@@ -13,6 +13,8 @@ import { NotificationAPI } from '@/lib/api/notification'
 import { AuthAPI } from '@/lib/api/auth'
 import { UserAPI, type UserProfile } from '@/lib/api/user'
 import { displayName } from '@/lib/dashboard/format'
+import { redirectToLogin } from '@/lib/auth/session'
+import { TokenManager } from '@/lib/auth/tokens'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
@@ -79,6 +81,12 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     document.body.classList.add('app-body')
     return () => document.body.classList.remove('app-body')
   }, [])
+
+  useEffect(() => {
+    if (!TokenManager.isAuthenticated()) {
+      void redirectToLogin(pathname)
+    }
+  }, [pathname])
 
   useEffect(() => {
     contentRef.current?.scrollTo(0, 0)

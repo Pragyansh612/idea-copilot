@@ -50,7 +50,11 @@ function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const redirectTo = searchParams.get('redirect') || '/dashboard'
-  const infoMessage = searchParams.get('message')
+  const messageParam = searchParams.get('message')
+  const infoMessage =
+    messageParam === 'session_expired'
+      ? 'Your session expired. Please sign in again.'
+      : messageParam
 
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')

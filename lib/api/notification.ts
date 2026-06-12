@@ -30,7 +30,7 @@ export class NotificationAPI {
     unread_count: number;
   }> {
     const result = await fetchWithAuth(`${API_URL}/api/notifications?unread_only=${unreadOnly}`);
-    return result.data;
+    return result.data ?? { notifications: [], total: 0, unread_count: 0 };
   }
 
   static async markAsRead(notificationId: string): Promise<Notification> {
