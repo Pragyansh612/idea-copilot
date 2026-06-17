@@ -27,7 +27,8 @@ import { IdeaSmartAlerts } from '@/components/dashboard/IdeaSmartAlerts'
 import { ReadinessChecklist } from '@/components/dashboard/ReadinessChecklist'
 import { RelatedIdeasSection } from '@/components/dashboard/RelatedIdeasSection'
 import { StartupReadinessScore } from '@/components/dashboard/StartupReadinessScore'
-import { buildReadinessItems, signalsFromIdeaDetail } from '@/lib/dashboard/readiness'
+import { buildReadinessItems, computeStartupReadinessPercent, signalsFromIdeaDetail } from '@/lib/dashboard/readiness'
+import { ExecutionSection } from '@/components/dashboard/ExecutionSection'
 import { formatDate, ideaScore, priorityShort, statusLabel, timeAgo } from '@/lib/dashboard/format'
 import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext'
 import { routes } from '@/lib/routes'
@@ -363,6 +364,8 @@ function IdeaDetailContent() {
   }
 
   const score = ideaScore(idea)
+  const readinessPercent = computeStartupReadinessPercent(readinessSignals)
+  const isLaunchReady = readinessPercent >= 100
   const readiness = buildReadinessItems({
     signals: readinessSignals,
     onDescribe: () => {
@@ -559,6 +562,16 @@ function IdeaDetailContent() {
                     <ReadinessChecklist items={readiness} />
                   </div>
                 </div>
+                {isLaunchReady && idea && (
+                  <ExecutionSection
+                    ideaId={ideaId}
+                    idea={idea}
+                    features={features}
+                    phases={phases}
+                    competitorCount={competitors.length}
+                    onError={setError}
+                  />
+                )}
                 {(editingDescription || !idea.description?.trim()) && (
                   <div className="dash-card" style={{ padding: 12 }} id="idea-description">
                     <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Idea description</div>
