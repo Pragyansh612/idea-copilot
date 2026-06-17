@@ -19,10 +19,9 @@ import { ExportAPI } from '@/lib/api/export'
 import { CopilotAPI } from '@/lib/api/copilot'
 import { CommentsSection } from '@/components/dashboard/CommentsSection'
 import { ShareModal } from '@/components/dashboard/ShareModal'
-import { MarketGapResults } from '@/components/dashboard/MarketGapResults'
 import { Toast } from '@/components/dashboard/Toast'
-import { normalizeGaps, type GapItem } from '@/lib/dashboard/gaps'
-import { hasGapRun, loadGapsForIdea, saveGapsForIdea } from '@/lib/dashboard/gap-storage'
+import { type GapItem } from '@/lib/dashboard/gaps'
+import { hasGapRun, loadGapsForIdea } from '@/lib/dashboard/gap-storage'
 import { suggestionBody, suggestionItemType } from '@/lib/dashboard/suggestions'
 import { IdeaSmartAlerts } from '@/components/dashboard/IdeaSmartAlerts'
 import { ReadinessChecklist } from '@/components/dashboard/ReadinessChecklist'
@@ -239,84 +238,6 @@ function IdeaDetailContent() {
     }
   }
 
-  async function discoverCompetitors() {
-    try {
-      setBusyAction('discover')
-      await IdeaAPI.discoverCompetitors(ideaId)
-      const comp = await CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] }))
-      setCompetitors(comp.research || comp.competitors || [])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to discover competitors')
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
-  async function runCompetitorAnalysis() {
-    try {
-      setBusyAction('comp-analysis')
-      await IdeaAPI.runCompetitorAnalysis(ideaId)
-      const comp = await CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] }))
-      setCompetitors(comp.research || comp.competitors || [])
-      setToast('Competitor analysis complete.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed competitor analysis')
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
-  async function discoverCompetitorsInline() {
-    try {
-      setBusyAction('discover')
-      setError(null)
-      await IdeaAPI.discoverCompetitors(ideaId)
-      const comp = await CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] }))
-      setCompetitors(comp.research || comp.competitors || [])
-      setToast('Competitors discovered.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Competitor discovery failed')
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
-  async function analyzeCompetitor(c: Record<string, unknown>) {
-    const url = String(c.competitor_url || c.url || '')
-    try {
-      setBusyAction(`analyze:${c.id}`)
-      if (url) {
-        await CompetitorAPI.scrapeCompetitors({ idea_id: ideaId, urls: [url], analyze: true })
-      } else {
-        await runCompetitorAnalysis()
-        return
-      }
-      const comp = await CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] }))
-      setCompetitors(comp.research || comp.competitors || [])
-      setToast('Competitor analyzed.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to analyze competitor')
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
-  async function runMarketGapAnalysis() {
-    try {
-      setBusyAction('gap')
-      const result = await IdeaAPI.marketGapAnalysis(ideaId)
-      const normalized = normalizeGaps(result)
-      setGaps(normalized)
-      saveGapsForIdea(ideaId, normalized)
-      setMarketGapDone(true)
-      setToast('Market gap analysis complete.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed market gap analysis')
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
   async function uploadAttachment(file: File) {
     try {
       setBusyAction('upload')
@@ -462,11 +383,8 @@ function IdeaDetailContent() {
       router.replace(routes.ideaTab(ideaId, 'roadmap', { focus: 'phase' }), { scroll: false })
       requestAnimationFrame(() => phaseNameRef.current?.focus())
     },
-    onDiscoverCompetitors: () => void discoverCompetitorsInline(),
-    onRunMarketGap: () => {
-      setTab('intelligence')
-      void runMarketGapAnalysis()
-    },
+    onDiscoverCompetitors: () => router.push(routes.intelligenceDiscover(ideaId)),
+    onRunMarketGap: () => router.push(routes.intelligenceGapAnalysis(ideaId)),
   })
   const copilotPrompts = [
     `Generate features for ${idea.title}`,
@@ -779,66 +697,43 @@ function IdeaDetailContent() {
           {tab === 'intelligence' && (
             <div className="id-panel">
               <div className="id-panel-head"><h3>Intelligence</h3></div>
-              <div className="dash-card ci-intel-banner" style={{ padding: 14, marginBottom: 12 }}>
-                <div className="eyebrow-mono" style={{ marginBottom: 6 }}>Full intelligence workspace</div>
-                <p style={{ color: 'var(--fg-2)', fontSize: 14, marginBottom: 12 }}>
-                  Compare features side-by-side, view market positioning, and generate strategic insights on the Competitors page.
-                </p>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  <button type="button" className="btn-sm solid" onClick={() => router.push(routes.competitorsForIdea(ideaId))}>
-                    <DI.Radar /> View competitors
-                  </button>
-                  <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.competitorsDiscover(ideaId))} disabled={busyAction === 'discover'}>
-                    <DI.Radar /> {busyAction === 'discover' ? 'Discovering…' : 'Discover competitors'}
-                  </button>
-                </div>
-              </div>
-              <div className="dash-card" style={{ padding: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-                  <div className="eyebrow-mono">Competitors · {competitors.length}</div>
-                  <button type="button" className="btn-sm ghost" onClick={runCompetitorAnalysis} disabled={busyAction === 'comp-analysis'}>
-                    <DI.Sparkles /> {busyAction === 'comp-analysis' ? 'Analyzing…' : 'Run strategy analysis'}
+              <div className="dash-card idea-intel-launcher">
+                <div className="idea-intel-launcher-head">
+                  <div>
+                    <div className="eyebrow-mono">Unified intelligence workspace</div>
+                    <p className="idea-intel-launcher-desc">
+                      One flow for this idea: discover competitors → analyze → feature matrix → position map → gap analysis → opportunities → strategic insights.
+                    </p>
+                  </div>
+                  <button type="button" className="btn-sm solid" onClick={() => router.push(routes.intelligenceForIdea(ideaId))}>
+                    <DI.Radar /> Open intelligence workspace
                   </button>
                 </div>
-                {competitors.length === 0 ? (
-                  <p style={{ color: 'var(--fg-2)' }}>No competitor research yet.</p>
-                ) : (
-                  competitors.map((c, idx) => {
-                    const name = String(c.competitor_name || c.name || `Competitor ${idx + 1}`)
-                    const meta = String(c.market_position || c.description || '')
-                    const conf = Math.round(Number(c.confidence_score) || 50)
-                    const cid = String(c.id || idx)
-                    return (
-                      <div key={cid} className="pricing-row" style={{ gridTemplateColumns: '36px 1fr auto auto auto' }}>
-                        <span className="ci-logo">{name[0]}</span>
-                        <span><div className="nm">{name}</div><div className="meta">{meta}</div></span>
-                        <div style={{ width: 80 }}><div className="ci-bar"><div className="fill" style={{ width: `${conf}%` }}/></div></div>
-                        <button
-                          type="button"
-                          className="btn-sm ghost"
-                          onClick={() => void analyzeCompetitor(c)}
-                          disabled={Boolean(busyAction)}
-                        >
-                          {busyAction === `analyze:${c.id}` ? '…' : 'Analyze'}
-                        </button>
-                        <span className="pr">{conf}</span>
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-              <div className="dash-card" style={{ padding: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-                  <div className="eyebrow-mono">Market gap analysis</div>
-                  <button type="button" className="btn-sm solid" onClick={runMarketGapAnalysis} disabled={busyAction === 'gap'}>
-                    <DI.Target /> {busyAction === 'gap' ? 'Running…' : 'Run Market Gap Analysis'}
+                <div className="idea-intel-launcher-stats">
+                  <div className="idea-intel-stat">
+                    <span className="idea-intel-stat-value">{competitors.length}</span>
+                    <span className="idea-intel-stat-label">Competitors tracked</span>
+                  </div>
+                  <div className="idea-intel-stat">
+                    <span className="idea-intel-stat-value">{gaps.length}</span>
+                    <span className="idea-intel-stat-label">Opportunities found</span>
+                  </div>
+                  <div className="idea-intel-stat">
+                    <span className="idea-intel-stat-value">{marketGapDone || gaps.length > 0 ? 'Yes' : '—'}</span>
+                    <span className="idea-intel-stat-label">Gap analysis run</span>
+                  </div>
+                </div>
+                <div className="idea-intel-launcher-actions">
+                  <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.intelligenceDiscover(ideaId))}>
+                    <DI.Radar /> Discover competitors
+                  </button>
+                  <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.intelligenceGapAnalysis(ideaId))}>
+                    <DI.Target /> Run gap analysis
+                  </button>
+                  <button type="button" className="btn-sm ghost" onClick={() => router.push(`${routes.intelligenceForIdea(ideaId)}#intel-strategic`)}>
+                    <DI.Sparkles /> Strategic insights
                   </button>
                 </div>
-                {gaps.length === 0 ? (
-                  <p style={{ color: 'var(--fg-2)' }}>No market gap results yet. Run analysis to see opportunity cards.</p>
-                ) : (
-                  <MarketGapResults gaps={gaps} ideaId={ideaId} />
-                )}
               </div>
             </div>
           )}

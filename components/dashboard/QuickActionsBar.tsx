@@ -32,8 +32,8 @@ export function QuickActionsBar() {
         <button type="button" className="quick-action" onClick={() => router.push(routes.copilot)}>
           <DI.Spark /> Ask Copilot
         </button>
-        <button type="button" className="quick-action" onClick={() => router.push(routes.competitors)}>
-          <DI.Radar /> Competitors
+        <button type="button" className="quick-action" onClick={() => router.push(routes.intelligence)}>
+          <DI.Radar /> Intelligence
         </button>
         <button type="button" className="quick-action" onClick={() => router.push(routes.exports)}>
           <DI.Export /> Export

@@ -99,7 +99,7 @@ export function alertActionHref(ideaId: string, action: IdeaAlert['action']): st
     case 'roadmap':
       return routes.ideaTab(ideaId, 'roadmap', { focus: 'phase' })
     case 'intelligence':
-      return routes.ideaTab(ideaId, 'intelligence')
+      return routes.intelligenceForIdea(ideaId)
     case 'roadmap-review':
       return routes.ideaTab(ideaId, 'roadmap')
     default:

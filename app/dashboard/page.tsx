@@ -234,11 +234,11 @@ export default function DashboardHome() {
               <p style={{ color: 'var(--fg-2)', fontSize: 14 }}>Discover who you&apos;re up against and compare features in one workspace.</p>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button type="button" className="btn-sm solid" onClick={() => router.push(routes.competitorsDiscover(competitorNudge.id))}>
+              <button type="button" className="btn-sm solid" onClick={() => router.push(routes.intelligenceDiscover(competitorNudge.id))}>
                 <DI.Radar /> Discover competitors
               </button>
-              <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.competitorsForIdea(competitorNudge.id))}>
-                View workspace
+              <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.intelligenceForIdea(competitorNudge.id))}>
+                Open intelligence
               </button>
             </div>
           </div>

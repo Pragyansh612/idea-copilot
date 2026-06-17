@@ -186,9 +186,9 @@ export function dashboardNextActionRoute(ideaId: string, step: ReadinessStepKey)
     case 'roadmap':
       return routes.ideaTab(ideaId, 'roadmap', { focus: 'phase' })
     case 'competitors':
-      return routes.competitorsDiscover(ideaId)
+      return routes.intelligenceDiscover(ideaId)
     case 'market':
-      return routes.ideaTab(ideaId, 'intelligence')
+      return routes.intelligenceGapAnalysis(ideaId)
     default:
       return routes.idea(ideaId)
   }

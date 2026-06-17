@@ -103,7 +103,7 @@ export function computeWorkspaceHealth(
     reasons.push({
       id: 'no-competitors',
       label: `${noCompetitors} idea${noCompetitors === 1 ? '' : 's'} ha${noCompetitors === 1 ? 's' : 've'} no competitor research`,
-      href: routes.competitors,
+      href: routes.intelligence,
     })
   }
   if (stale > 0) {
@@ -146,7 +146,7 @@ export function generateWorkspaceInsights(
         id: `missing-research-${idea.id}`,
         message: `${idea.title} has a roadmap but no market research.`,
         cta: 'Discover competitors',
-        href: routes.competitorsDiscover(idea.id),
+        href: routes.intelligenceDiscover(idea.id),
         priority: 100,
       })
     }

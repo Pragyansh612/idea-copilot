@@ -28,10 +28,19 @@ export const routes = {
   copilotDiscuss: (ideaId: string, prompt: string) =>
     `/dashboard/copilot?idea=${encodeURIComponent(ideaId)}&prompt=${encodeURIComponent(prompt)}`,
   ideaAttachments: (id: string) => `/dashboard/ideas/${id}?tab=attachments`,
-  competitors: '/dashboard/competitors',
-  competitorsForIdea: (id: string) => `/dashboard/competitors?idea=${id}`,
-  competitorsDiscover: (id: string) => `/dashboard/competitors?idea=${encodeURIComponent(id)}&discover=1`,
-  gaps: '/dashboard/gaps',
+  /** Unified intelligence workspace (competitors + market gaps) */
+  intelligence: '/dashboard/intelligence',
+  intelligenceForIdea: (id: string) => `/dashboard/intelligence?idea=${encodeURIComponent(id)}`,
+  intelligenceDiscover: (id: string) =>
+    `/dashboard/intelligence?idea=${encodeURIComponent(id)}&discover=1`,
+  intelligenceGapAnalysis: (id: string) =>
+    `/dashboard/intelligence?idea=${encodeURIComponent(id)}&gap=1`,
+  /** @deprecated Use intelligence routes — kept for backward-compatible redirects */
+  competitors: '/dashboard/intelligence',
+  competitorsForIdea: (id: string) => `/dashboard/intelligence?idea=${encodeURIComponent(id)}`,
+  competitorsDiscover: (id: string) =>
+    `/dashboard/intelligence?idea=${encodeURIComponent(id)}&discover=1`,
+  gaps: '/dashboard/intelligence',
   roadmaps: '/dashboard/roadmaps',
   notifications: '/dashboard/notifications',
   achievements: '/dashboard/achievements',

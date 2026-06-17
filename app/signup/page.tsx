@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AuthAPI } from '@/lib/api/auth'
 import { clearSession } from '@/lib/auth/session'
+import { syncAuthCookies } from '@/lib/auth/sync-cookies'
 import { TokenManager } from '@/lib/auth/tokens'
 import { routes } from '@/lib/routes'
 
@@ -94,17 +95,7 @@ function SignupForm() {
       }
 
       TokenManager.setTokens(access_token, refresh_token)
-
-      const cookieResponse = await fetch('/api/auth/set-cookies', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ access_token, refresh_token }),
-      })
-
-      if (!cookieResponse.ok) {
-        const errorData = await cookieResponse.json()
-        throw new Error(errorData.error || 'Failed to set authentication cookies')
-      }
+      await syncAuthCookies(access_token, refresh_token)
 
       await new Promise(resolve => setTimeout(resolve, 150))
       window.location.href = routes.newIdea
