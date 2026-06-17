@@ -13,20 +13,38 @@ import {
   saveIdeaDraft,
   type IdeaDraft,
 } from '@/lib/copilot/idea-draft'
+import {
+  applyCopilotListToIdea,
+  buildQuickReportPrompt,
+  buildTieredChipGroups,
+  detectExtractableList,
+  fetchIdeaCopilotContext,
+  parseReportSections,
+  QUICK_REPORTS,
+  quickReportTitle,
+  workspaceSuggestionChips,
+  type ExtractableList,
+  type IdeaCopilotContext,
+  type QuickReportId,
+  type ReportSection,
+} from '@/lib/copilot/opinionated-copilot'
 import { PageError, PageLoading } from '@/components/dashboard/PageState'
 import { timeAgo } from '@/lib/dashboard/format'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
-const GENERIC_SUGGESTIONS = [
-  'Generate MVP plan',
-  'Find market gaps',
-  'Improve my roadmap',
-  'Analyze competitors',
-  'Validate my idea',
-]
-
-type Message = { id: string; role: 'user' | 'ai'; content: string; display?: string }
+type Message = {
+  id: string
+  role: 'user' | 'ai'
+  content: string
+  display?: string
+  kind?: 'chat' | 'report'
+  reportTitle?: string
+  reportSections?: ReportSection[]
+  extractableList?: ExtractableList | null
+  ideaId?: string
+  appliedToIdea?: boolean
+}
 
 export default function CopilotPage() {
   return (
@@ -45,10 +63,15 @@ function CopilotPageInner() {
   const [draft, setDraft] = useState('')
   const [ideas, setIdeas] = useState<Idea[]>([])
   const [selectedIdeaId, setSelectedIdeaId] = useState<string | undefined>()
+  const [ideaContext, setIdeaContext] = useState<IdeaCopilotContext | null>(null)
+  const [contextLoading, setContextLoading] = useState(false)
   const [ideaDraft, setIdeaDraft] = useState<IdeaDraft | null>(null)
   const [showDraftPanel, setShowDraftPanel] = useState(false)
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
+  const [runningReport, setRunningReport] = useState<QuickReportId | null>(null)
+  const [applyingListId, setApplyingListId] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const streamRef = useRef<HTMLDivElement>(null)
 
@@ -94,14 +117,50 @@ function CopilotPageInner() {
   }, [searchParams])
 
   useEffect(() => {
+    if (!selectedIdeaId) {
+      setIdeaContext(null)
+      return
+    }
+    let cancelled = false
+    setContextLoading(true)
+    fetchIdeaCopilotContext(selectedIdeaId)
+      .then(ctx => {
+        if (!cancelled) setIdeaContext(ctx)
+      })
+      .catch(() => {
+        if (!cancelled) setIdeaContext(null)
+      })
+      .finally(() => {
+        if (!cancelled) setContextLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedIdeaId])
+
+  useEffect(() => {
     streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages, sending])
+  }, [messages, sending, runningReport])
+
+  useEffect(() => {
+    if (!toast) return
+    const t = window.setTimeout(() => setToast(null), 3500)
+    return () => window.clearTimeout(t)
+  }, [toast])
 
   function loadConversation(item: ChatHistoryItem) {
     setActiveId(item.id)
+    const aiContent = item.ai_response
     setMessages([
       { id: `u-${item.id}`, role: 'user', content: item.user_prompt, display: item.user_prompt },
-      { id: `a-${item.id}`, role: 'ai', content: item.ai_response },
+      {
+        id: `a-${item.id}`,
+        role: 'ai',
+        content: aiContent,
+        kind: 'chat',
+        extractableList: item.idea_id ? detectExtractableList(aiContent) : null,
+        ideaId: item.idea_id,
+      },
     ])
     if (item.idea_id) setSelectedIdeaId(item.idea_id)
   }
@@ -131,7 +190,12 @@ function CopilotPageInner() {
     saveIdeaDraft(next)
   }
 
-  async function sendMessage(text?: string) {
+  async function refreshHistory() {
+    const hist = await CopilotAPI.getHistory(30, 0)
+    setHistory(hist.logs)
+  }
+
+  async function sendMessage(text?: string, options?: { reportId?: QuickReportId }) {
     const query = (text ?? draft).trim()
     if (!query || sending) return
 
@@ -139,14 +203,17 @@ function CopilotPageInner() {
       ? buildDraftContextMessage(ideaDraft, query)
       : query
 
-    setDraft('')
+    if (!text) setDraft('')
     setSending(true)
     setError(null)
+
     const userMsg: Message = {
       id: `u-${Date.now()}`,
       role: 'user',
       content: payload,
-      display: query,
+      display: options?.reportId ? quickReportTitle(options.reportId) : query,
+      kind: options?.reportId ? 'report' : 'chat',
+      reportTitle: options?.reportId ? quickReportTitle(options.reportId) : undefined,
     }
     setMessages(prev => [...prev, userMsg])
 
@@ -155,9 +222,20 @@ function CopilotPageInner() {
         query: payload,
         idea_id: selectedIdeaId,
       })
-      setMessages(prev => [...prev, { id: `a-${Date.now()}`, role: 'ai', content: response.response }])
-      const hist = await CopilotAPI.getHistory(30, 0)
-      setHistory(hist.logs)
+      const aiContent = response.response
+      const isReport = Boolean(options?.reportId)
+      const aiMsg: Message = {
+        id: `a-${Date.now()}`,
+        role: 'ai',
+        content: aiContent,
+        kind: isReport ? 'report' : 'chat',
+        reportTitle: isReport ? quickReportTitle(options!.reportId!) : undefined,
+        reportSections: isReport ? parseReportSections(aiContent) : undefined,
+        extractableList: !isReport && selectedIdeaId ? detectExtractableList(aiContent) : null,
+        ideaId: selectedIdeaId,
+      }
+      setMessages(prev => [...prev, aiMsg])
+      await refreshHistory()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Copilot request failed')
     } finally {
@@ -165,15 +243,45 @@ function CopilotPageInner() {
     }
   }
 
+  async function runQuickReport(reportId: QuickReportId) {
+    if (!selectedIdeaId || !ideaContext || sending || runningReport) return
+    setRunningReport(reportId)
+    setError(null)
+    try {
+      const prompt = buildQuickReportPrompt(reportId, ideaContext)
+      await sendMessage(prompt, { reportId })
+    } finally {
+      setRunningReport(null)
+    }
+  }
+
+  async function addListToIdea(message: Message) {
+    if (!message.ideaId || !message.extractableList || message.appliedToIdea) return
+    try {
+      setApplyingListId(message.id)
+      setError(null)
+      const result = await applyCopilotListToIdea(
+        message.ideaId,
+        message.extractableList,
+        message.content,
+      )
+      setMessages(prev =>
+        prev.map(m => (m.id === message.id ? { ...m, appliedToIdea: true } : m)),
+      )
+      setToast(`Added ${result.created} ${result.itemType}${result.created === 1 ? '' : 's'} to your idea.`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add items to idea')
+    } finally {
+      setApplyingListId(null)
+    }
+  }
+
   const contextIdea = ideas.find(i => i.id === selectedIdeaId)
-  const cpSuggestions = contextIdea
-    ? [
-        `Generate features for ${contextIdea.title}`,
-        `Who are the competitors of ${contextIdea.title}`,
-        `What is the market gap for ${contextIdea.title}`,
-        `Create a go-to-market plan for ${contextIdea.title}`,
-      ]
-    : GENERIC_SUGGESTIONS
+  const chipGroups = ideaContext
+    ? buildTieredChipGroups(ideaContext.signals)
+    : []
+  const workspaceChips = workspaceSuggestionChips()
+  const ideaTitle = contextIdea?.title ?? ideaContext?.idea.title
 
   return (
     <div className="page page-narrow">
@@ -184,7 +292,9 @@ function CopilotPageInner() {
           <div className="ph-sub">
             {showDraftPanel && ideaDraft
               ? 'Draft fields below are sent with each message when enabled.'
-              : 'Connected to your ideas and competitor data on the backend.'}
+              : selectedIdeaId && ideaContext
+                ? `Opinionated for ${ideaContext.readinessPercent}% Startup Readiness — suggestions match your next step.`
+                : 'Connected to your ideas and competitor data on the backend.'}
           </div>
         </div>
         <div className="page-head-actions">
@@ -194,6 +304,10 @@ function CopilotPageInner() {
           <button type="button" className="btn-sm ghost" onClick={newChat}><DI.Plus/> New chat</button>
         </div>
       </div>
+
+      {toast && (
+        <div className="dash-toast" role="status">{toast}</div>
+      )}
 
       {error && !loading && <PageError message={error} onRetry={loadInitial} />}
 
@@ -230,9 +344,11 @@ function CopilotPageInner() {
               <span className="t2">
                 {ideaDraft && hasDraftContent(ideaDraft)
                   ? 'Idea draft attached'
-                  : contextIdea
-                    ? 'Idea context'
-                    : 'Workspace · all ideas'}
+                  : ideaContext
+                    ? `${ideaContext.readinessPercent}% readiness · product manager mode`
+                    : contextIdea
+                      ? 'Loading idea context…'
+                      : 'Workspace · all ideas'}
               </span>
             </div>
             {ideas.length > 0 && (
@@ -252,16 +368,63 @@ function CopilotPageInner() {
               <div className="cp-msg ai">
                 <div className="av"/>
                 <div className="cp-bubble">
-                  Ask anything about your ideas, competitors, or roadmap.
+                  {selectedIdeaId
+                    ? 'Pick a suggestion below or run a Quick Report — I’ll tailor answers to where this idea is in your readiness journey.'
+                    : 'Select an idea to unlock stage-aware suggestions and Quick Reports.'}
                   {showDraftPanel ? ' Enabled draft fields are included in each message.' : ''}
                 </div>
               </div>
             )}
             {messages.map(m => (
-              <div key={m.id} className={`cp-msg ${m.role === 'user' ? 'user' : 'ai'}`}>
+              <div key={m.id} className={`cp-msg ${m.role === 'user' ? 'user' : 'ai'}${m.kind === 'report' ? ' cp-msg--report' : ''}`}>
                 <div className="av"/>
-                <div className="cp-bubble" style={{ whiteSpace: 'pre-wrap' }}>
-                  {m.role === 'user' && m.display ? m.display : m.content}
+                <div className="cp-msg-body">
+                  {m.role === 'ai' && m.kind === 'report' && m.reportSections && m.reportSections.length > 0 ? (
+                    <div className="cp-report-card">
+                      <div className="cp-report-head">
+                        <span className="cp-report-badge">Quick Report</span>
+                        <h3>{m.reportTitle ?? 'Report'}</h3>
+                      </div>
+                      <div className="cp-report-body">
+                        {m.reportSections.map(section => (
+                          <div key={section.title} className="cp-report-section">
+                            <div className="cp-report-section-title">{section.title}</div>
+                            <ul className="cp-report-list">
+                              {section.items.map((item, idx) => (
+                                <li key={`${section.title}-${idx}`}>{item}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : m.role === 'ai' && m.kind === 'report' ? (
+                    <div className="cp-report-card cp-report-card--fallback">
+                      <div className="cp-report-head">
+                        <span className="cp-report-badge">Quick Report</span>
+                        <h3>{m.reportTitle ?? 'Report'}</h3>
+                      </div>
+                      <div className="cp-report-fallback" style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
+                    </div>
+                  ) : (
+                    <div className="cp-bubble" style={{ whiteSpace: 'pre-wrap' }}>
+                      {m.role === 'user' && m.display ? m.display : m.content}
+                    </div>
+                  )}
+                  {m.role === 'ai' && m.extractableList && m.ideaId && m.kind !== 'report' && (
+                    <button
+                      type="button"
+                      className="cp-add-to-idea"
+                      onClick={() => addListToIdea(m)}
+                      disabled={Boolean(m.appliedToIdea) || applyingListId === m.id}
+                    >
+                      {m.appliedToIdea
+                        ? `Added to ${ideaTitle ?? 'idea'}`
+                        : applyingListId === m.id
+                          ? 'Adding…'
+                          : `Add these to ${ideaTitle ?? 'idea'}`}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -274,10 +437,73 @@ function CopilotPageInner() {
           </div>
 
           <div className="cp-suggestions">
-            {cpSuggestions.map(s => (
-              <button key={s} type="button" className="cp-sugg" onClick={() => setDraft(s)} disabled={sending}>{s}</button>
-            ))}
+            {selectedIdeaId ? (
+              contextLoading && chipGroups.length === 0 ? (
+                <p className="cp-sugg-hint">Loading readiness-aware suggestions…</p>
+              ) : chipGroups.length > 0 ? (
+                chipGroups.map(group => (
+                  <div key={group.stage} className="cp-sugg-group">
+                    <span className="cp-sugg-stage">{group.stage}</span>
+                    <div className="cp-sugg-row">
+                      {group.chips.map(chip => (
+                        <button
+                          key={chip}
+                          type="button"
+                          className="cp-sugg"
+                          onClick={() => sendMessage(chip)}
+                          disabled={sending}
+                        >
+                          {chip}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="cp-sugg-hint">This idea is fully ready — use Quick Reports or ask anything.</p>
+              )
+            ) : (
+              <div className="cp-sugg-group">
+                <span className="cp-sugg-stage">Workspace</span>
+                <div className="cp-sugg-row">
+                  {workspaceChips.map(chip => (
+                    <button
+                      key={chip}
+                      type="button"
+                      className="cp-sugg"
+                      onClick={() => setDraft(chip)}
+                      disabled={sending}
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
+
+          {selectedIdeaId && (
+            <div className="cp-quick-reports">
+              <div className="cp-quick-reports-label">Quick Reports</div>
+              <div className="cp-quick-reports-row">
+                {QUICK_REPORTS.map(report => (
+                  <button
+                    key={report.id}
+                    type="button"
+                    className="cp-quick-report-btn"
+                    onClick={() => runQuickReport(report.id)}
+                    disabled={!ideaContext || sending || Boolean(runningReport)}
+                    title={report.label}
+                  >
+                    {runningReport === report.id ? 'Generating…' : report.label}
+                  </button>
+                ))}
+              </div>
+              {!ideaContext && !contextLoading && (
+                <p className="cp-quick-reports-hint">Could not load idea context for reports.</p>
+              )}
+            </div>
+          )}
 
           <div className="cp-input-wrap">
             <div className="cp-input">
@@ -293,7 +519,9 @@ function CopilotPageInner() {
                 placeholder={
                   ideaDraft && hasDraftContent(ideaDraft)
                     ? 'Add a prompt — draft context is attached automatically…'
-                    : 'Ask the Copilot anything about your ideas, market or roadmap…'
+                    : selectedIdeaId
+                      ? 'Ask your product strategist anything…'
+                      : 'Ask the Copilot anything about your ideas, market or roadmap…'
                 }
                 rows={1}
                 disabled={sending}
