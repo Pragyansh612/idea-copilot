@@ -1,33 +1,33 @@
-import Nav from '@/components/Nav'
-import Hero from '@/components/Hero'
-import LogoStrip from '@/components/LogoStrip'
-import ProblemSection from '@/components/ProblemSection'
-import WorkflowSection from '@/components/WorkflowSection'
-import IntelSection from '@/components/IntelSection'
-import CopilotSection from '@/components/CopilotSection'
-import MockupsSection from '@/components/MockupsSection'
-import WhySection from '@/components/WhySection'
-import TestimonialsSection from '@/components/TestimonialsSection'
-// import PricingSection from '@/components/PricingSection' // hidden — free for now
-import FinalCTA from '@/components/FinalCTA'
-import Footer from '@/components/Footer'
+import type { Metadata } from 'next'
+import LandingNav from '@/components/landing/LandingNav'
+import HeroSection from '@/components/landing/HeroSection'
+import DiscoverySection from '@/components/landing/DiscoverySection'
+import WorkspaceSection from '@/components/landing/WorkspaceSection'
+import TimelineSection from '@/components/landing/TimelineSection'
+import FounderSection from '@/components/landing/FounderSection'
+import CloseSection from '@/components/landing/CloseSection'
+import LandingFooter from '@/components/landing/LandingFooter'
+import '@/app/landing.css'
+
+export const metadata: Metadata = {
+  title: 'IdeaCopilot — Know which idea to build next',
+  description:
+    'IdeaCopilot finds your competitors, identifies the gap they all missed, and tells you exactly what to build next.',
+}
 
 export default function Home() {
   return (
     <>
-      <Nav />
-      <Hero />
-      <LogoStrip />
-      <ProblemSection />
-      <WorkflowSection />
-      <IntelSection />
-      <CopilotSection />
-      <MockupsSection />
-      <WhySection />
-      <TestimonialsSection />
-      {/* <PricingSection /> */}
-      <FinalCTA />
-      <Footer />
+      <LandingNav />
+      <main className="landing-page">
+        <HeroSection />
+        <DiscoverySection />
+        <WorkspaceSection />
+        <TimelineSection />
+        <FounderSection />
+        <CloseSection />
+      </main>
+      <LandingFooter />
     </>
   )
 }
