@@ -12,7 +12,15 @@ export function isValidAccessToken(token: string): boolean {
   return isJwtShape(token) && !isAccessTokenExpired(token)
 }
 
-/** Refresh token must be well-formed (may be near expiry at login boundary). */
+/**
+ * Refresh tokens from Supabase/GoTrue are often opaque strings (not JWTs).
+ * Accept JWT-shaped or opaque tokens with enough entropy.
+ */
 export function isValidRefreshToken(token: string): boolean {
-  return isJwtShape(token) && token.length >= 20
+  if (!token || typeof token !== 'string') return false
+  const trimmed = token.trim()
+  if (trimmed.length < 20 || /\s/.test(trimmed)) return false
+  if (isJwtShape(trimmed)) return true
+  // Opaque refresh token (e.g. base64 / hex / v1.* styles)
+  return /^[A-Za-z0-9_\-+/=.]+$/.test(trimmed)
 }

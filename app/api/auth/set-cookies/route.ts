@@ -35,14 +35,20 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { access_token, refresh_token } = body
+    const access_token =
+      typeof body?.access_token === 'string' ? body.access_token.trim() : ''
+    const refresh_token =
+      typeof body?.refresh_token === 'string' ? body.refresh_token.trim() : ''
 
     if (!access_token || !refresh_token) {
       return NextResponse.json({ error: 'Missing tokens' }, { status: 400 })
     }
 
     if (!isValidAccessToken(access_token)) {
-      return NextResponse.json({ error: 'Invalid or expired access token' }, { status: 400 })
+      return NextResponse.json(
+        { error: 'Invalid or expired access token' },
+        { status: 400 },
+      )
     }
 
     if (!isValidRefreshToken(refresh_token)) {
