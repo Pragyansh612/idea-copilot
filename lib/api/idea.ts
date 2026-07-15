@@ -697,6 +697,15 @@ export class CompetitorAPI {
     return result.data;
   }
 
+  /** Re-scrape + analyze an existing competitor row (updates in place — does not insert a duplicate). */
+  static async analyzeCompetitor(competitorId: string): Promise<any> {
+    const result = await fetchWithAuth(`${API_URL}/api/competitor/${competitorId}/analyze`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    return result.data;
+  }
+
   static async getCompetitorResearch(ideaId: string): Promise<any> {
     const result = await fetchWithAuth(`${API_URL}/api/competitor/${ideaId}`);
     return result.data;

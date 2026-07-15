@@ -23,6 +23,7 @@ import { Toast } from '@/components/dashboard/Toast'
 import { type GapItem } from '@/lib/dashboard/gaps'
 import { hasGapRun, loadGapsForIdea } from '@/lib/dashboard/gap-storage'
 import { expandSuggestions, type SuggestionCard } from '@/lib/dashboard/suggestions'
+import { dedupeCompetitorsByUrl, type CompetitorRow } from '@/lib/dashboard/competitor-intel'
 import { IdeaSmartAlerts } from '@/components/dashboard/IdeaSmartAlerts'
 import { ReadinessChecklist } from '@/components/dashboard/ReadinessChecklist'
 import { RelatedIdeasSection } from '@/components/dashboard/RelatedIdeasSection'
@@ -57,14 +58,18 @@ function IdeaDetailContent() {
   const [features, setFeatures] = useState<Feature[]>([])
   const [phases, setPhases] = useState<Phase[]>([])
   const [suggestions, setSuggestions] = useState<AISuggestion[]>([])
-  const [competitors, setCompetitors] = useState<Array<Record<string, unknown>>>([])
+  const [competitors, setCompetitors] = useState<CompetitorRow[]>([])
   const [gaps, setGaps] = useState<GapItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [newPhaseName, setNewPhaseName] = useState('')
   const [newPhaseDesc, setNewPhaseDesc] = useState('')
-  const [featureDraftByPhase, setFeatureDraftByPhase] = useState<Record<string, string>>({})
+  const [featureDraftByPhase, setFeatureDraftByPhase] = useState<Record<string, { title: string; description: string; priority: Feature['priority'] }>>({})
+  const [newFeatureTitle, setNewFeatureTitle] = useState('')
+  const [newFeatureDesc, setNewFeatureDesc] = useState('')
+  const [newFeaturePriority, setNewFeaturePriority] = useState<Feature['priority']>('medium')
+  const [dismissedSuggestionKeys, setDismissedSuggestionKeys] = useState<string[]>([])
   const [suggestionType, setSuggestionType] = useState<AIGenerateRequest['suggestion_type']>('features')
   const [copilotMessages, setCopilotMessages] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([])
   const [copilotInput, setCopilotInput] = useState('')
@@ -168,7 +173,10 @@ function IdeaDetailContent() {
       setFeatures(detail.features || [])
       setPhases(detail.phases || [])
       setSuggestions(sugs)
-      setCompetitors(comp.research || comp.competitors || [])
+      setDismissedSuggestionKeys([])
+      setCompetitors(
+        dedupeCompetitorsByUrl((comp.research || comp.competitors || []) as CompetitorRow[]),
+      )
       setAttachments(atts)
       setGaps(loadGapsForIdea(ideaId))
       setMarketGapDone(hasGapRun(ideaId))
@@ -181,16 +189,58 @@ function IdeaDetailContent() {
     }
   }, [ideaId, setIdeaDetailTitle])
 
+  /** Refresh features/phases/suggestions without blanking the page or clearing Copilot. */
+  const softRefreshLists = useCallback(async () => {
+    if (!ideaId) return
+    try {
+      const [detail, sugs] = await Promise.all([
+        IdeaAPI.getIdea(ideaId),
+        AIAPI.getSuggestions(ideaId).catch(() => null),
+      ])
+      setIdea(detail.idea)
+      setFeatures(detail.features || [])
+      setPhases(detail.phases || [])
+      if (sugs) setSuggestions(sugs)
+    } catch {
+      /* keep local state; action already updated optimistically */
+    }
+  }, [ideaId])
+
   useEffect(() => {
     load()
   }, [load])
 
   async function toggleFeature(feature: Feature) {
+    const next = !feature.is_completed
+    setFeatures(prev =>
+      prev.map(f =>
+        f.id === feature.id
+          ? { ...f, is_completed: next, completed_at: next ? new Date().toISOString() : undefined }
+          : f,
+      ),
+    )
     try {
-      const updated = await FeatureAPI.updateFeature(feature.id, { is_completed: !feature.is_completed })
+      const updated = await FeatureAPI.updateFeature(feature.id, { is_completed: next })
       setFeatures(prev => prev.map(f => (f.id === feature.id ? updated : f)))
+      // Refresh idea progress % without full-page load
+      IdeaAPI.getIdea(ideaId)
+        .then(detail => setIdea(detail.idea))
+        .catch(() => {})
     } catch (err) {
+      setFeatures(prev => prev.map(f => (f.id === feature.id ? feature : f)))
       showError(err instanceof Error ? err.message : 'Failed to update feature')
+    }
+  }
+
+  async function togglePhaseComplete(phase: Phase) {
+    const next = !phase.is_completed
+    setPhases(prev => prev.map(p => (p.id === phase.id ? { ...p, is_completed: next } : p)))
+    try {
+      const updated = await PhaseAPI.updatePhase(phase.id, { is_completed: next })
+      setPhases(prev => prev.map(p => (p.id === phase.id ? updated : p)))
+    } catch (err) {
+      setPhases(prev => prev.map(p => (p.id === phase.id ? phase : p)))
+      showError(err instanceof Error ? err.message : 'Failed to update phase')
     }
   }
 
@@ -206,6 +256,7 @@ function IdeaDetailContent() {
       setPhases(prev => [...prev, phase])
       setNewPhaseName('')
       setNewPhaseDesc('')
+      showSuccess(`Phase “${phase.name}” added.`)
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Failed to create phase')
     } finally {
@@ -214,13 +265,55 @@ function IdeaDetailContent() {
   }
 
   async function addFeatureToPhase(phaseId: string) {
-    const title = (featureDraftByPhase[phaseId] || '').trim()
+    const draft = featureDraftByPhase[phaseId]
+    const title = (draft?.title || '').trim()
     if (!title) return
+    const dup = features.some(f => f.title.trim().toLowerCase() === title.toLowerCase())
+    if (dup) {
+      showError(`Feature “${title}” already exists.`)
+      return
+    }
     try {
       setBusyAction(`feature:${phaseId}`)
-      const feature = await FeatureAPI.createFeatureForPhase(phaseId, { title, priority: 'medium' })
+      const feature = await FeatureAPI.createFeatureForPhase(phaseId, {
+        title,
+        description: draft?.description?.trim() || undefined,
+        priority: draft?.priority || 'medium',
+      })
       setFeatures(prev => [...prev, feature])
-      setFeatureDraftByPhase(prev => ({ ...prev, [phaseId]: '' }))
+      setFeatureDraftByPhase(prev => ({
+        ...prev,
+        [phaseId]: { title: '', description: '', priority: 'medium' },
+      }))
+      showSuccess(`Added “${feature.title}” to phase.`)
+      void softRefreshLists()
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to add feature')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function createFeatureOnIdea() {
+    const title = newFeatureTitle.trim()
+    if (!title) return
+    if (features.some(f => f.title.trim().toLowerCase() === title.toLowerCase())) {
+      showError(`Feature “${title}” already exists.`)
+      return
+    }
+    try {
+      setBusyAction('feature:scope')
+      const feature = await FeatureAPI.createFeatureForIdea(ideaId, {
+        title,
+        description: newFeatureDesc.trim() || undefined,
+        priority: newFeaturePriority,
+      })
+      setFeatures(prev => [...prev, feature])
+      setNewFeatureTitle('')
+      setNewFeatureDesc('')
+      setNewFeaturePriority('medium')
+      showSuccess(`Added “${feature.title}” to feature scope.`)
+      void softRefreshLists()
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Failed to add feature')
     } finally {
@@ -234,6 +327,7 @@ function IdeaDetailContent() {
       await AIAPI.generateSuggestions({ idea_id: ideaId, suggestion_type: suggestionType })
       const fresh = await AIAPI.getSuggestions(ideaId)
       setSuggestions(fresh)
+      setDismissedSuggestionKeys([])
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Failed to generate AI suggestions')
     } finally {
@@ -242,19 +336,53 @@ function IdeaDetailContent() {
   }
 
   async function addSuggestionCard(card: SuggestionCard) {
+    const titleKey = card.title.trim().toLowerCase()
+    if (
+      card.itemType === 'feature' &&
+      features.some(f => f.title.trim().toLowerCase() === titleKey)
+    ) {
+      setDismissedSuggestionKeys(prev => (prev.includes(card.key) ? prev : [...prev, card.key]))
+      showError(`Feature “${card.title}” is already in scope.`)
+      return
+    }
+    if (
+      card.itemType === 'phase' &&
+      phases.some(p => p.name.trim().toLowerCase() === titleKey)
+    ) {
+      setDismissedSuggestionKeys(prev => (prev.includes(card.key) ? prev : [...prev, card.key]))
+      showError(`Phase “${card.title}” already exists.`)
+      return
+    }
+
+    setDismissedSuggestionKeys(prev => (prev.includes(card.key) ? prev : [...prev, card.key]))
     try {
       setBusyAction(`apply:${card.key}`)
-      await AIAPI.createFromSuggestion({
+      const desc =
+        card.body.trim() === card.title.trim()
+          ? card.userBenefit || card.body
+          : card.body
+      const res = await AIAPI.createFromSuggestion({
         suggestion_id: card.suggestionId,
         item_type: card.itemType,
         idea_id: ideaId,
         title: card.title,
-        description: card.body,
+        description: desc,
         priority: card.priority,
       })
-      await load()
+      if (res.feature) {
+        setFeatures(prev =>
+          prev.some(f => f.id === res.feature!.id) ? prev : [...prev, res.feature!],
+        )
+      }
+      if (res.phase) {
+        setPhases(prev =>
+          prev.some(p => p.id === res.phase!.id) ? prev : [...prev, res.phase!],
+        )
+      }
       showSuccess(`Added “${card.title}” as a ${card.itemType}.`)
+      void softRefreshLists()
     } catch (err) {
+      setDismissedSuggestionKeys(prev => prev.filter(k => k !== card.key))
       showError(err instanceof Error ? err.message : 'Failed to add suggestion')
     } finally {
       setBusyAction(null)
@@ -362,15 +490,59 @@ function IdeaDetailContent() {
   }
 
   const featuresByPhase = useMemo(() => {
-    const byPhase: Record<string, { total: number; done: number }> = {}
+    const byPhase: Record<string, { total: number; done: number; items: Feature[] }> = {}
     for (const f of features) {
       if (!f.phase_id) continue
-      if (!byPhase[f.phase_id]) byPhase[f.phase_id] = { total: 0, done: 0 }
+      if (!byPhase[f.phase_id]) byPhase[f.phase_id] = { total: 0, done: 0, items: [] }
       byPhase[f.phase_id].total += 1
+      byPhase[f.phase_id].items.push(f)
       if (f.is_completed) byPhase[f.phase_id].done += 1
     }
     return byPhase
   }, [features])
+
+  const openFeatures = useMemo(() => {
+    const seen = new Set<string>()
+    return features.filter(f => {
+      if (f.is_completed) return false
+      const key = f.title.trim().toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [features])
+  const completedFeatures = useMemo(() => {
+    const seen = new Set<string>()
+    return features.filter(f => {
+      if (!f.is_completed) return false
+      const key = f.title.trim().toLowerCase()
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [features])
+  const unscopedFeatures = useMemo(() => features.filter(f => !f.phase_id), [features])
+
+  const suggestionCards = useMemo(() => {
+    const existingTitles = [
+      ...features.map(f => f.title),
+      ...phases.map(p => p.name),
+    ]
+    return expandSuggestions(suggestions, {
+      existingTitles,
+      dismissedKeys: dismissedSuggestionKeys,
+    })
+  }, [suggestions, features, phases, dismissedSuggestionKeys])
+
+  const competitorPreview = useMemo(() => {
+    return competitors.slice(0, 5).map((c, i) => ({
+      id: String(c.id || c.competitor_url || `comp-${i}`),
+      name: String(c.competitor_name || c.name || c.competitor_url || 'Competitor'),
+      position: typeof c.market_position === 'string' ? c.market_position : undefined,
+    }))
+  }, [competitors])
+
+  const gapPreview = useMemo(() => gaps.slice(0, 5), [gaps])
 
   const readinessSignals = useMemo(
     () =>
@@ -436,9 +608,16 @@ function IdeaDetailContent() {
       {toast && <Toast message={toast} variant={toastVariant} onDismiss={() => setToast(null)} />}
       <div className="page-head">
         <div>
-          <div className="ph-eyebrow">Idea · {statusLabel(idea.status)}</div>
+          <div className="ph-eyebrow">Idea · {statusLabel(idea.status)} · {idea.priority} priority</div>
           <h1><em>{idea.title}</em></h1>
-          <div className="ph-sub">{idea.description || 'No description yet.'}</div>
+          <div className="ph-meta-chips">
+            <span className="pill accent">{statusLabel(idea.status)}</span>
+            <span className="pill">{formatDate(idea.created_at)}</span>
+            <span className="pill">Updated {timeAgo(idea.updated_at)}</span>
+            {(idea.tags?.length ?? 0) > 0 && idea.tags.slice(0, 4).map(t => (
+              <span key={t} className="pill">{t}</span>
+            ))}
+          </div>
         </div>
         <div className="page-head-actions">
           <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.ideas)}>
@@ -502,43 +681,34 @@ function IdeaDetailContent() {
       )}
 
       <div className="idea-detail">
-        <div className="id-left">
-          <div className="id-hero dash-card">
-            <span className="id-tag">{statusLabel(idea.status)} · {idea.priority} priority</span>
-            <h2>{idea.title}</h2>
-            <p>{idea.description}</p>
-            <div className="id-scorebar">
+        <div className="id-center">
+          <div className="id-strip dash-card">
+            <div className="id-strip-bar">
               <div className="label"><span>Score</span><span>{score} / 100</span></div>
               <div className="bar"><div className="fill" style={{ width: `${score}%` }}/></div>
             </div>
-            <div className="id-scorebar">
+            <div className="id-strip-bar">
               <div className="label"><span>Progress</span><span>{idea.progress_percentage ?? 0}%</span></div>
               <div className="bar"><div className="fill" style={{ width: `${idea.progress_percentage ?? 0}%` }}/></div>
             </div>
-          </div>
-
-          <div className="dash-card">
-            <div className="id-meta">
-              <div className="row"><span className="key">Status</span><span className="val pill accent">{statusLabel(idea.status)}</span></div>
-              <div className="row"><span className="key">Priority</span><span className="val">{idea.priority}</span></div>
-              <div className="row"><span className="key">Created</span><span className="val">{formatDate(idea.created_at)}</span></div>
-              <div className="row"><span className="key">Updated</span><span className="val">{timeAgo(idea.updated_at)}</span></div>
+            <div className="id-strip-item">
+              <span className="k">Features</span>
+              <span className="v">{openFeatures.length} open · {completedFeatures.length} done</span>
+            </div>
+            <div className="id-strip-item">
+              <span className="k">Phases</span>
+              <span className="v">{phases.filter(p => p.is_completed).length}/{phases.length}</span>
+            </div>
+            <div className="id-strip-item">
+              <span className="k">Competitors</span>
+              <span className="v">{competitors.length}</span>
+            </div>
+            <div className="id-strip-item">
+              <span className="k">AI pending</span>
+              <span className="v">{suggestionCards.length}</span>
             </div>
           </div>
 
-          {(idea.tags?.length ?? 0) > 0 && (
-            <div className="dash-card">
-              <div className="eyebrow-mono" style={{ marginBottom: 12 }}>Tags</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {idea.tags.map(t => (
-                  <span key={t} style={{ fontFamily: 'var(--font-mono)', fontSize: 11, padding: '3px 9px', borderRadius: 999, background: 'color-mix(in srgb, var(--fg) 4%, transparent)', border: '1px solid var(--line-2)', color: 'var(--fg-2)' }}>{t}</span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="id-center">
           <div className="id-tabs">
             {[
               { id: 'overview', label: 'Overview', count: '' },
@@ -568,6 +738,26 @@ function IdeaDetailContent() {
                 <h3>Overview</h3>
               </div>
               <div style={{ display: 'grid', gap: 12 }}>
+                {!editingDescription && (
+                <div className="dash-card" style={{ padding: 12 }} id="idea-description-view">
+                  <div className="id-panel-head" style={{ marginBottom: 8, padding: 0, border: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="eyebrow-mono">Description</div>
+                    <button
+                      type="button"
+                      className="btn-sm ghost"
+                      onClick={() => {
+                        setDescriptionDraft(idea.description || '')
+                        setEditingDescription(true)
+                      }}
+                    >
+                      Edit
+                    </button>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 14, color: idea.description?.trim() ? 'var(--fg-2)' : 'var(--fg-3)', lineHeight: 1.55 }}>
+                    {idea.description?.trim() || 'No description yet — add one so Copilot and competitor discovery stay on target.'}
+                  </p>
+                </div>
+                )}
                 <div className="dash-card" style={{ padding: 12 }}>
                   <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Scores</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8 }}>
@@ -683,11 +873,15 @@ function IdeaDetailContent() {
                       <DI.Sparkles /> {busyAction === 'suggest' ? 'Generating…' : 'Generate AI Suggestions'}
                     </button>
                   </div>
-                  {suggestions.length === 0 ? (
-                    <p style={{ color: 'var(--fg-2)' }}>No suggestions yet.</p>
+                  {suggestionCards.length === 0 ? (
+                    <p style={{ color: 'var(--fg-2)' }}>
+                      {suggestions.length === 0
+                        ? 'No suggestions yet. Generate to get ranked feature ideas.'
+                        : 'All suggestions from this batch are already in Feature scope or applied.'}
+                    </p>
                   ) : (
                     <div style={{ display: 'grid', gap: 10 }}>
-                      {expandSuggestions(suggestions).map(card => (
+                      {suggestionCards.map(card => (
                         <div key={card.key} className="sug-card">
                           <span className="s-label"><DI.Sparkles/> {card.suggestionType}</span>
                           <div className="s-title">{card.title}</div>
@@ -699,8 +893,10 @@ function IdeaDetailContent() {
                               )}
                             </div>
                           )}
-                          <div className="s-body">{card.body}</div>
-                          {card.userBenefit && (
+                          {card.body && card.body !== card.title && (
+                            <div className="s-body">{card.body}</div>
+                          )}
+                          {card.userBenefit && card.userBenefit.trim() !== card.body.trim() && (
                             <p style={{ margin: 0, fontSize: 12.5, color: 'var(--fg-3)', lineHeight: 1.45 }}>
                               Benefit: {card.userBenefit}
                             </p>
@@ -709,7 +905,7 @@ function IdeaDetailContent() {
                             <button
                               type="button"
                               className="s-act accept"
-                              onClick={() => addSuggestionCard(card)}
+                              onClick={() => void addSuggestionCard(card)}
                               disabled={busyAction === `apply:${card.key}`}
                             >
                               {busyAction === `apply:${card.key}` ? 'Adding…' : `Add as ${card.itemType}`}
@@ -724,17 +920,109 @@ function IdeaDetailContent() {
                   <div className="id-panel-head" style={{ marginBottom: 10, padding: 0, border: 0 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 500 }}>Feature scope</h3>
                   </div>
+                  <div style={{ display: 'grid', gap: 8, marginBottom: 14, padding: 10, borderRadius: 8, border: '1px solid var(--line)' }}>
+                    <div className="eyebrow-mono">Add feature</div>
+                    <input
+                      value={newFeatureTitle}
+                      onChange={e => setNewFeatureTitle(e.target.value)}
+                      placeholder="Feature title"
+                      style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--bg-2)', color: 'var(--fg)' }}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          void createFeatureOnIdea()
+                        }
+                      }}
+                    />
+                    <textarea
+                      value={newFeatureDesc}
+                      onChange={e => setNewFeatureDesc(e.target.value)}
+                      placeholder="Optional details (why it matters, acceptance notes…)"
+                      rows={2}
+                      style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--bg-2)', color: 'var(--fg)', resize: 'vertical' }}
+                    />
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <select
+                        className="dash-select"
+                        value={newFeaturePriority}
+                        onChange={e => setNewFeaturePriority(e.target.value as Feature['priority'])}
+                      >
+                        <option value="high">high</option>
+                        <option value="medium">medium</option>
+                        <option value="low">low</option>
+                      </select>
+                      <button
+                        type="button"
+                        className="btn-sm solid"
+                        onClick={() => void createFeatureOnIdea()}
+                        disabled={busyAction === 'feature:scope' || !newFeatureTitle.trim()}
+                      >
+                        <DI.Plus /> {busyAction === 'feature:scope' ? 'Adding…' : 'Add feature'}
+                      </button>
+                    </div>
+                  </div>
                   {features.length === 0 ? (
-                    <p style={{ color: 'var(--fg-2)' }}>No features yet. Generate suggestions above or add them on the Roadmap tab.</p>
+                    <p style={{ color: 'var(--fg-2)' }}>No features yet. Generate suggestions above or add one here.</p>
                   ) : (
-                    <div className="feat-list">
-                      {features.map(f => (
-                        <div key={f.id} className={`feat-item ${f.is_completed ? 'done' : ''}`} onClick={() => toggleFeature(f)}>
-                          <span className="ck">{f.is_completed && <DI.Check/>}</span>
-                          <span className={`prio ${f.priority}`}>{priorityShort(f.priority)}</span>
-                          <span className="label">{f.title}</span>
+                    <div style={{ display: 'grid', gap: 14 }}>
+                      <div>
+                        <div className="eyebrow-mono" style={{ marginBottom: 8 }}>
+                          Open · {openFeatures.length}
                         </div>
-                      ))}
+                        {openFeatures.length === 0 ? (
+                          <p style={{ color: 'var(--fg-3)', fontSize: 13, margin: 0 }}>Nothing open — nice work.</p>
+                        ) : (
+                          <div className="feat-list">
+                            {openFeatures.map(f => (
+                              <div
+                                key={f.id}
+                                className="feat-item"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => void toggleFeature(f)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    void toggleFeature(f)
+                                  }
+                                }}
+                              >
+                                <span className="ck" />
+                                <span className={`prio ${f.priority}`}>{priorityShort(f.priority)}</span>
+                                <span className="label">{f.title}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {completedFeatures.length > 0 && (
+                        <div>
+                          <div className="eyebrow-mono" style={{ marginBottom: 8 }}>
+                            Completed · {completedFeatures.length}
+                          </div>
+                          <div className="feat-list">
+                            {completedFeatures.map(f => (
+                              <div
+                                key={f.id}
+                                className="feat-item done"
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => void toggleFeature(f)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter' || e.key === ' ') {
+                                    e.preventDefault()
+                                    void toggleFeature(f)
+                                  }
+                                }}
+                              >
+                                <span className="ck"><DI.Check/></span>
+                                <span className={`prio ${f.priority}`}>{priorityShort(f.priority)}</span>
+                                <span className="label">{f.title}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -769,39 +1057,147 @@ function IdeaDetailContent() {
                 </div>
               </div>
               {phases.length === 0 ? (
-                <p style={{ color: 'var(--fg-2)' }}>No phases yet.</p>
+                <p style={{ color: 'var(--fg-2)' }}>No phases yet. Add a phase, then attach features from Feature scope or create new ones here.</p>
               ) : (
                 <div className="phases">
-                  {phases.map((p, i) => (
-                    <div key={p.id} className={`phase ${p.is_completed ? 'done' : i === 0 ? 'active' : 'next'}`}>
-                      <span className="p-dot">{p.is_completed ? <DI.Check/> : String(i + 1).padStart(2, '0')}</span>
-                      <div className="p-body">
-                        <div className="p-row"><span>{p.name}</span></div>
-                        <div className="p-desc">{p.description}</div>
-                        <div className="p-meta">
-                          <span>
-                            <b>{featuresByPhase[p.id]?.done ?? 0}</b>/{featuresByPhase[p.id]?.total ?? 0} features complete
-                          </span>
-                        </div>
-                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                          <input
-                            style={{ flex: 1, padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--bg-2)', color: 'var(--fg)' }}
-                            placeholder="Add feature to this phase"
-                            value={featureDraftByPhase[p.id] ?? ''}
-                            onChange={e => setFeatureDraftByPhase(prev => ({ ...prev, [p.id]: e.target.value }))}
-                          />
-                          <button
-                            type="button"
-                            className="btn-sm ghost"
-                            onClick={() => addFeatureToPhase(p.id)}
-                            disabled={busyAction === `feature:${p.id}`}
-                          >
-                            {busyAction === `feature:${p.id}` ? 'Adding…' : 'Add feature'}
-                          </button>
+                  {phases.map((p, i) => {
+                    const phaseFeatures = featuresByPhase[p.id]?.items ?? []
+                    const draft = featureDraftByPhase[p.id] ?? { title: '', description: '', priority: 'medium' as Feature['priority'] }
+                    return (
+                      <div key={p.id} className={`phase ${p.is_completed ? 'done' : i === 0 ? 'active' : 'next'}`}>
+                        <span className="p-dot">{p.is_completed ? <DI.Check/> : String(i + 1).padStart(2, '0')}</span>
+                        <div className="p-body">
+                          <div className="p-row" style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span>{p.name}</span>
+                            <button
+                              type="button"
+                              className="btn-sm ghost"
+                              onClick={() => void togglePhaseComplete(p)}
+                            >
+                              {p.is_completed ? 'Reopen phase' : 'Mark phase complete'}
+                            </button>
+                          </div>
+                          {p.description ? <div className="p-desc">{p.description}</div> : null}
+                          <div className="p-meta">
+                            <span>
+                              <b>{featuresByPhase[p.id]?.done ?? 0}</b>/{featuresByPhase[p.id]?.total ?? 0} features complete
+                            </span>
+                          </div>
+                          {phaseFeatures.length > 0 ? (
+                            <div className="feat-list" style={{ marginTop: 10 }}>
+                              {phaseFeatures.map(f => (
+                                <div
+                                  key={f.id}
+                                  className={`feat-item ${f.is_completed ? 'done' : ''}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => void toggleFeature(f)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter' || e.key === ' ') {
+                                      e.preventDefault()
+                                      void toggleFeature(f)
+                                    }
+                                  }}
+                                >
+                                  <span className="ck">{f.is_completed && <DI.Check/>}</span>
+                                  <span className={`prio ${f.priority}`}>{priorityShort(f.priority)}</span>
+                                  <span className="label">{f.title}</span>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p style={{ color: 'var(--fg-3)', fontSize: 13, margin: '8px 0 0' }}>No features in this phase yet.</p>
+                          )}
+                          <div style={{ display: 'grid', gap: 8, marginTop: 10 }}>
+                            <input
+                              style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--bg-2)', color: 'var(--fg)' }}
+                              placeholder="Feature title"
+                              value={draft.title}
+                              onChange={e =>
+                                setFeatureDraftByPhase(prev => ({
+                                  ...prev,
+                                  [p.id]: { ...draft, title: e.target.value },
+                                }))
+                              }
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  void addFeatureToPhase(p.id)
+                                }
+                              }}
+                            />
+                            <textarea
+                              style={{ padding: '7px 10px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--bg-2)', color: 'var(--fg)', resize: 'vertical' }}
+                              placeholder="Optional details"
+                              rows={2}
+                              value={draft.description}
+                              onChange={e =>
+                                setFeatureDraftByPhase(prev => ({
+                                  ...prev,
+                                  [p.id]: { ...draft, description: e.target.value },
+                                }))
+                              }
+                            />
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                              <select
+                                className="dash-select"
+                                value={draft.priority}
+                                onChange={e =>
+                                  setFeatureDraftByPhase(prev => ({
+                                    ...prev,
+                                    [p.id]: { ...draft, priority: e.target.value as Feature['priority'] },
+                                  }))
+                                }
+                              >
+                                <option value="high">high</option>
+                                <option value="medium">medium</option>
+                                <option value="low">low</option>
+                              </select>
+                              <button
+                                type="button"
+                                className="btn-sm ghost"
+                                onClick={() => void addFeatureToPhase(p.id)}
+                                disabled={busyAction === `feature:${p.id}` || !draft.title.trim()}
+                              >
+                                {busyAction === `feature:${p.id}` ? 'Adding…' : 'Add feature'}
+                              </button>
+                            </div>
+                          </div>
+                          {unscopedFeatures.length > 0 && (
+                            <div style={{ marginTop: 10 }}>
+                              <div className="eyebrow-mono" style={{ marginBottom: 6 }}>Attach from Feature scope</div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {unscopedFeatures.slice(0, 8).map(f => (
+                                  <button
+                                    key={f.id}
+                                    type="button"
+                                    className="btn-sm ghost"
+                                    disabled={busyAction === `attach:${f.id}`}
+                                    onClick={() => {
+                                      void (async () => {
+                                        try {
+                                          setBusyAction(`attach:${f.id}`)
+                                          const updated = await FeatureAPI.updateFeature(f.id, { phase_id: p.id })
+                                          setFeatures(prev => prev.map(x => (x.id === f.id ? updated : x)))
+                                          showSuccess(`Attached “${f.title}” to ${p.name}.`)
+                                        } catch (err) {
+                                          showError(err instanceof Error ? err.message : 'Failed to attach feature')
+                                        } finally {
+                                          setBusyAction(null)
+                                        }
+                                      })()
+                                    }}
+                                  >
+                                    + {f.title}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -836,6 +1232,51 @@ function IdeaDetailContent() {
                     <span className="idea-intel-stat-label">Gap analysis run</span>
                   </div>
                 </div>
+                {(competitorPreview.length > 0 || gapPreview.length > 0) && (
+                  <div className="idea-intel-preview-grid">
+                    {competitorPreview.length > 0 && (
+                      <div className="idea-intel-preview">
+                        <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Competitors</div>
+                        <ul className="idea-intel-preview-list">
+                          {competitorPreview.map(c => (
+                            <li key={c.id}>
+                              <span className="idea-intel-preview-name">{c.name}</span>
+                              {c.position && <span className="idea-intel-preview-meta">{c.position}</span>}
+                            </li>
+                          ))}
+                        </ul>
+                        {competitors.length > competitorPreview.length && (
+                          <p className="idea-intel-preview-more">+{competitors.length - competitorPreview.length} more in workspace</p>
+                        )}
+                      </div>
+                    )}
+                    {gapPreview.length > 0 && (
+                      <div className="idea-intel-preview">
+                        <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Gaps & opportunities</div>
+                        <ul className="idea-intel-preview-list">
+                          {gapPreview.map((g, i) => (
+                            <li key={`${g.title || 'gap'}-${i}`}>
+                              <span className="idea-intel-preview-name">{g.title || 'Opportunity'}</span>
+                              {g.description ? (
+                                <span className="idea-intel-preview-meta">
+                                  {g.description.length > 90 ? `${g.description.slice(0, 90)}…` : g.description}
+                                </span>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                        {gaps.length > gapPreview.length && (
+                          <p className="idea-intel-preview-more">+{gaps.length - gapPreview.length} more in workspace</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {competitorPreview.length === 0 && gapPreview.length === 0 && (
+                  <p style={{ margin: 0, fontSize: 13, color: 'var(--fg-3)', lineHeight: 1.5 }}>
+                    No competitor or gap data yet. Discover competitors or run gap analysis to populate this summary.
+                  </p>
+                )}
                 <div className="idea-intel-launcher-actions">
                   <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.intelligenceDiscover(ideaId))}>
                     <DI.Radar /> Discover competitors
@@ -941,15 +1382,6 @@ function IdeaDetailContent() {
               <CommentsSection ideaId={ideaId} currentUserId={currentUserId} />
             </div>
           )}
-        </div>
-
-        <div className="id-right">
-          <div className="id-right-card">
-            <div className="r-head"><DI.Spark/> Live from API</div>
-            <p style={{ fontSize: 13, color: 'var(--fg)', lineHeight: 1.55 }}>
-              Features, phases, AI suggestions, and competitors load from your workspace API.
-            </p>
-          </div>
         </div>
       </div>
     </div>

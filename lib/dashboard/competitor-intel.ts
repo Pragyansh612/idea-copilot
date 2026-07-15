@@ -130,6 +130,45 @@ export function competitorApiId(c: CompetitorRow): string | null {
   return id
 }
 
+/** Normalize website host+path for duplicate detection. */
+export function canonicalizeCompetitorUrl(url: string): string {
+  const raw = (url || '').trim().toLowerCase()
+  if (!raw) return ''
+  try {
+    const withProto = /^https?:\/\//.test(raw) ? raw : `https://${raw}`
+    const u = new URL(withProto)
+    const host = u.hostname.replace(/^www\./, '')
+    const path = u.pathname.replace(/\/+$/, '') || ''
+    return `${host}${path}`
+  } catch {
+    return raw.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, '')
+  }
+}
+
+/**
+ * Keep one row per canonical URL (prefer analyzed + richer description).
+ * Prevents duplicate columns after Analyze incorrectly re-scraped as insert.
+ */
+export function dedupeCompetitorsByUrl(rows: CompetitorRow[]): CompetitorRow[] {
+  const byKey = new Map<string, CompetitorRow>()
+  const score = (c: CompetitorRow) => {
+    let s = 0
+    if (isCompetitorAnalyzed(c)) s += 10
+    if (c.description) s += Math.min(5, String(c.description).length / 80)
+    if (Array.isArray(c.strengths)) s += (c.strengths as unknown[]).length
+    if (c.confidence_score != null) s += Number(c.confidence_score) || 0
+    return s
+  }
+  rows.forEach((c, idx) => {
+    const url = canonicalizeCompetitorUrl(competitorWebsite(c))
+    const name = competitorDisplayName(c, idx).toLowerCase()
+    const key = url || `name:${name}` || competitorId(c, idx)
+    const prev = byKey.get(key)
+    if (!prev || score(c) >= score(prev)) byKey.set(key, c)
+  })
+  return [...byKey.values()]
+}
+
 export function isCompetitorAnalyzed(c: CompetitorRow): boolean {
   const strengths = c.strengths as unknown[] | undefined
   const weaknesses = c.weaknesses as unknown[] | undefined

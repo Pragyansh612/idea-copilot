@@ -26,6 +26,7 @@ import {
   competitorScrapeQuality,
   competitorWebsite,
   computeWorkspaceStats,
+  dedupeCompetitorsByUrl,
   normalizeStrategicAnalysis,
   type CompetitorFeature,
   type CompetitorRow,
@@ -102,7 +103,7 @@ function IntelligenceContent() {
       ideaList.map(async idea => {
         try {
           const data = await CompetitorAPI.getCompetitorResearch(idea.id)
-          const rows = (data.research || data.competitors || []) as CompetitorRow[]
+          const rows = dedupeCompetitorsByUrl((data.research || data.competitors || []) as CompetitorRow[])
           byIdea[idea.id] = rows
           await Promise.all(
             rows.map(async c => {
@@ -160,7 +161,9 @@ function IntelligenceContent() {
         CompetitorAPI.getCompetitorResearch(ideaId),
       ])
       if (ac.signal.aborted) return
-      const rows = (compData.research || compData.competitors || []) as CompetitorRow[]
+      const rows = dedupeCompetitorsByUrl(
+        (compData.research || compData.competitors || []) as CompetitorRow[],
+      )
       setYourFeatures(detail.features || [])
       setCompetitors(rows)
       setCompetitorPage(0)
@@ -305,18 +308,24 @@ function IntelligenceContent() {
 
   async function analyzeCompetitor(c: CompetitorRow) {
     if (!selectedIdeaId) return
-    const url = competitorWebsite(c)
+    const apiId = competitorApiId(c)
     try {
       setBusyAction(`analyze-${c.id}`)
       setActionError(null)
-      if (url) {
-        await CompetitorAPI.scrapeCompetitors({
-          idea_id: selectedIdeaId,
-          urls: [url],
-          analyze: true,
-        })
+      if (apiId) {
+        // Update existing row — never scrape-insert (that created duplicate competitors).
+        await CompetitorAPI.analyzeCompetitor(apiId)
       } else {
-        await IdeaAPI.runCompetitorAnalysis(selectedIdeaId)
+        const url = competitorWebsite(c)
+        if (url) {
+          await CompetitorAPI.scrapeCompetitors({
+            idea_id: selectedIdeaId,
+            urls: [url],
+            analyze: true,
+          })
+        } else {
+          await IdeaAPI.runCompetitorAnalysis(selectedIdeaId)
+        }
       }
       await loadIdeaIntel(selectedIdeaId)
       await loadWorkspaceAggregates(ideas)
@@ -624,6 +633,17 @@ function IntelligenceContent() {
                                     >
                                       <DI.List /> Features ({feats.length})
                                     </button>
+                                    {competitorApiId(c) && selectedIdeaId && (
+                                      <button
+                                        type="button"
+                                        className="btn-sm ghost"
+                                        onClick={() =>
+                                          router.push(routes.intelligenceCompetitor(selectedIdeaId, competitorApiId(c)!))
+                                        }
+                                      >
+                                        Open details
+                                      </button>
+                                    )}
                                   </div>
                                   {expandedFeatures === cid && (
                                     <ul className="ci-feature-list">

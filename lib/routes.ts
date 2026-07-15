@@ -35,6 +35,8 @@ export const routes = {
     `/dashboard/intelligence?idea=${encodeURIComponent(id)}&discover=1`,
   intelligenceGapAnalysis: (id: string) =>
     `/dashboard/intelligence?idea=${encodeURIComponent(id)}&gap=1`,
+  intelligenceCompetitor: (ideaId: string, competitorId: string) =>
+    `/dashboard/intelligence/competitors/${encodeURIComponent(competitorId)}?idea=${encodeURIComponent(ideaId)}`,
   /** @deprecated Use intelligence routes — kept for backward-compatible redirects */
   competitors: '/dashboard/intelligence',
   competitorsForIdea: (id: string) => `/dashboard/intelligence?idea=${encodeURIComponent(id)}`,

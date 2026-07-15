@@ -16,8 +16,8 @@ const COLS_PER_PAGE = 5 // including "You" when present
 
 function shortLabel(label: string, isYou: boolean) {
   if (isYou) return 'You'
-  if (label.length <= 12) return label
-  return `${label.slice(0, 10)}…`
+  if (label.length <= 18) return label
+  return `${label.slice(0, 16)}…`
 }
 
 export function CompetitorFeatureMatrix({ matrix, loading, onImportGaps, importingGaps }: Props) {
@@ -97,7 +97,8 @@ export function CompetitorFeatureMatrix({ matrix, loading, onImportGaps, importi
         <div
           className="fm-grid"
           style={{
-            gridTemplateColumns: `minmax(140px, 200px) repeat(${colCount}, minmax(56px, 88px))`,
+            gridTemplateColumns: `minmax(160px, 1.6fr) repeat(${colCount}, minmax(88px, 1fr))`,
+            width: '100%',
           }}
         >
           <div className="fm-cell head row-head">Feature</div>
