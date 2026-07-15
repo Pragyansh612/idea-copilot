@@ -68,7 +68,7 @@ export default function AchievementsPage() {
   const unlockedCount = rows.filter(r => r.unlocked).length
 
   return (
-    <div className="page page-narrow">
+    <div className="page">
       <div className="page-head">
         <div>
           <div className="ph-eyebrow">Achievements · {unlockedCount}/{rows.length} unlocked</div>

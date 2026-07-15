@@ -22,7 +22,7 @@ import { ShareModal } from '@/components/dashboard/ShareModal'
 import { Toast } from '@/components/dashboard/Toast'
 import { type GapItem } from '@/lib/dashboard/gaps'
 import { hasGapRun, loadGapsForIdea } from '@/lib/dashboard/gap-storage'
-import { suggestionBody, suggestionItemType } from '@/lib/dashboard/suggestions'
+import { expandSuggestions, type SuggestionCard } from '@/lib/dashboard/suggestions'
 import { IdeaSmartAlerts } from '@/components/dashboard/IdeaSmartAlerts'
 import { ReadinessChecklist } from '@/components/dashboard/ReadinessChecklist'
 import { RelatedIdeasSection } from '@/components/dashboard/RelatedIdeasSection'
@@ -241,13 +241,19 @@ function IdeaDetailContent() {
     }
   }
 
-  async function addSuggestionToIdea(s: AISuggestion) {
+  async function addSuggestionCard(card: SuggestionCard) {
     try {
-      setBusyAction(`apply:${s.id}`)
-      const itemType = suggestionItemType(s)
-      await AIAPI.createFromSuggestion({ suggestion_id: s.id, item_type: itemType, idea_id: ideaId })
+      setBusyAction(`apply:${card.key}`)
+      await AIAPI.createFromSuggestion({
+        suggestion_id: card.suggestionId,
+        item_type: card.itemType,
+        idea_id: ideaId,
+        title: card.title,
+        description: card.body,
+        priority: card.priority,
+      })
       await load()
-      showSuccess(`Added to your idea as a ${itemType}.`)
+      showSuccess(`Added “${card.title}” as a ${card.itemType}.`)
     } catch (err) {
       showError(err instanceof Error ? err.message : 'Failed to add suggestion')
     } finally {
@@ -681,13 +687,32 @@ function IdeaDetailContent() {
                     <p style={{ color: 'var(--fg-2)' }}>No suggestions yet.</p>
                   ) : (
                     <div style={{ display: 'grid', gap: 10 }}>
-                      {suggestions.map(s => (
-                        <div key={s.id} className="sug-card">
-                          <span className="s-label"><DI.Sparkles/> {s.suggestion_type}</span>
-                          <div className="s-body">{suggestionBody(s)}</div>
+                      {expandSuggestions(suggestions).map(card => (
+                        <div key={card.key} className="sug-card">
+                          <span className="s-label"><DI.Sparkles/> {card.suggestionType}</span>
+                          <div className="s-title">{card.title}</div>
+                          {(card.priority || card.estimatedEffort != null) && (
+                            <div className="s-meta">
+                              {card.priority && <span className="chip">{card.priority}</span>}
+                              {card.estimatedEffort != null && (
+                                <span className="chip">effort {String(card.estimatedEffort)}</span>
+                              )}
+                            </div>
+                          )}
+                          <div className="s-body">{card.body}</div>
+                          {card.userBenefit && (
+                            <p style={{ margin: 0, fontSize: 12.5, color: 'var(--fg-3)', lineHeight: 1.45 }}>
+                              Benefit: {card.userBenefit}
+                            </p>
+                          )}
                           <div className="s-actions">
-                            <button type="button" className="s-act accept" onClick={() => addSuggestionToIdea(s)} disabled={busyAction === `apply:${s.id}`}>
-                              {busyAction === `apply:${s.id}` ? 'Adding…' : 'Add to Idea'}
+                            <button
+                              type="button"
+                              className="s-act accept"
+                              onClick={() => addSuggestionCard(card)}
+                              disabled={busyAction === `apply:${card.key}`}
+                            >
+                              {busyAction === `apply:${card.key}` ? 'Adding…' : `Add as ${card.itemType}`}
                             </button>
                           </div>
                         </div>

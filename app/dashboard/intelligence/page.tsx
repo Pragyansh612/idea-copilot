@@ -11,6 +11,7 @@ import { Toast } from '@/components/dashboard/Toast'
 import * as DI from '@/components/dashboard/Icons'
 import {
   CompetitorAPI,
+  FeatureAPI,
   IdeaAPI,
   type Feature,
   type Idea,
@@ -33,6 +34,12 @@ import {
 } from '@/lib/dashboard/competitor-intel'
 import { normalizeGapResult, type MarketGapResult } from '@/lib/dashboard/gaps'
 import { loadGapResultForIdea, saveGapsForIdea } from '@/lib/dashboard/gap-storage'
+import {
+  getDiscoverJob,
+  startDiscoverJob,
+  subscribeDiscoverJob,
+  type DiscoverJobState,
+} from '@/lib/dashboard/discover-job'
 import { routes } from '@/lib/routes'
 
 const FLOW_STEPS = [
@@ -68,6 +75,7 @@ function IntelligenceContent() {
   const [ideaDataLoading, setIdeaDataLoading] = useState(false)
   const [matrixLoading, setMatrixLoading] = useState(false)
   const [busyAction, setBusyAction] = useState<string | null>(null)
+  const [discoverJob, setDiscoverJob] = useState<DiscoverJobState | null>(null)
   const [gapAnalyzing, setGapAnalyzing] = useState(false)
   const [insightsLoading, setInsightsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -201,36 +209,38 @@ function IntelligenceContent() {
     if (selectedIdeaId) loadIdeaIntel(selectedIdeaId)
   }, [selectedIdeaId, loadIdeaIntel])
 
+  useEffect(() => {
+    if (!selectedIdeaId) {
+      setDiscoverJob(null)
+      return
+    }
+    return subscribeDiscoverJob(selectedIdeaId, setDiscoverJob)
+  }, [selectedIdeaId])
+
+  const discovering = discoverJob?.status === 'running' || busyAction === 'discover'
+
   const discoverCompetitors = useCallback(async () => {
     if (!selectedIdeaId) return
+    if (discoverJob?.status === 'running') return
+    const ideaId = selectedIdeaId
     try {
       setBusyAction('discover')
       setError(null)
-      const result = await IdeaAPI.discoverCompetitors(selectedIdeaId)
-      await loadIdeaIntel(selectedIdeaId)
-      await loadWorkspaceAggregates(ideas)
-
-      const rejectedCount = result.rejected?.length ?? 0
-      if (result.cached) {
-        const age = result.cache_age_days
-        setToast(
-          age != null
-            ? `Showing cached results from ${age} day${age === 1 ? '' : 's'} ago. Use Refresh to re-run.`
-            : 'Showing cached competitor results.'
-        )
-      } else if (rejectedCount > 0) {
-        setToast(
-          `Discovery complete — ${result.discovered ?? 0} competitor(s) found, ${rejectedCount} candidate(s) skipped as not relevant.`
-        )
-      } else {
-        setToast('Competitor discovery complete.')
-      }
+      await startDiscoverJob(ideaId, async () => {
+        const result = await IdeaAPI.discoverCompetitors(ideaId)
+        await loadIdeaIntel(ideaId)
+        await loadWorkspaceAggregates(ideas)
+        return result
+      })
+      const done = getDiscoverJob(ideaId)
+      if (done.resultSummary) setToast(done.resultSummary)
+      else if (done.error) setError(done.error)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Competitor discovery failed')
     } finally {
       setBusyAction(null)
     }
-  }, [selectedIdeaId, loadIdeaIntel, loadWorkspaceAggregates, ideas])
+  }, [selectedIdeaId, discoverJob?.status, loadIdeaIntel, loadWorkspaceAggregates, ideas])
 
   useEffect(() => {
     if (searchParams.get('discover') !== '1' || !selectedIdeaId || ideasLoading || discoverOnce.current) return
@@ -283,6 +293,32 @@ function IntelligenceContent() {
       setToast('Competitor analysis complete.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Analysis failed')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function importGapsAsFeatures(gaps: string[]) {
+    if (!selectedIdeaId || gaps.length === 0) return
+    try {
+      setBusyAction('import-gaps')
+      setError(null)
+      const existing = new Set(yourFeatures.map(f => f.title.trim().toLowerCase()))
+      let added = 0
+      for (const title of gaps) {
+        if (existing.has(title.trim().toLowerCase())) continue
+        await FeatureAPI.createFeatureForIdea(selectedIdeaId, {
+          title,
+          description: 'Imported from competitor gap analysis',
+          priority: 'medium',
+        })
+        existing.add(title.trim().toLowerCase())
+        added += 1
+      }
+      await loadIdeaIntel(selectedIdeaId)
+      setToast(added > 0 ? `Imported ${added} feature${added === 1 ? '' : 's'} from competitor gaps.` : 'Those gaps are already in your feature list.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to import gap features')
     } finally {
       setBusyAction(null)
     }
@@ -430,11 +466,33 @@ function IntelligenceContent() {
                       type="button"
                       className="btn-sm solid"
                       onClick={() => void discoverCompetitors()}
-                      disabled={!selectedIdeaId || busyAction === 'discover'}
+                      disabled={!selectedIdeaId || discovering}
                     >
-                      <DI.Radar /> {busyAction === 'discover' ? 'Discovering…' : 'Discover competitors'}
+                      <DI.Radar /> {discovering ? 'Discovering…' : 'Discover competitors'}
                     </button>
                   </header>
+                  {discoverJob && (discoverJob.status === 'running' || discoverJob.logs.length > 0) && (
+                    <div className="discover-progress">
+                      <div className="discover-progress-head">
+                        {discoverJob.status === 'running' && <div className="spin-ring" />}
+                        {discoverJob.status === 'running'
+                          ? 'Discovery in progress — you can leave this page and come back'
+                          : discoverJob.status === 'error'
+                            ? 'Discovery failed'
+                            : discoverJob.resultSummary || 'Discovery finished'}
+                      </div>
+                      <div className="discover-progress-log" aria-live="polite">
+                        {discoverJob.logs.slice(-8).map((line, i) => (
+                          <div key={`${line.at}-${i}`} className="log-line">
+                            <span className="log-time">
+                              {new Date(line.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                            </span>
+                            <span>{line.text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </section>
 
                 <section id="intel-analyze" className="intel-flow-step dash-card">
@@ -464,7 +522,7 @@ function IntelligenceContent() {
                             type="button"
                             className="btn-sm solid"
                             onClick={() => void discoverCompetitors()}
-                            disabled={busyAction === 'discover'}
+                            disabled={discovering}
                           >
                             <DI.Radar /> Discover competitors
                           </button>
@@ -547,7 +605,12 @@ function IntelligenceContent() {
                       <p>Compare your features against every competitor side by side.</p>
                     </div>
                   </header>
-                  <CompetitorFeatureMatrix matrix={matrix} loading={matrixLoading} />
+                  <CompetitorFeatureMatrix
+                    matrix={matrix}
+                    loading={matrixLoading}
+                    importingGaps={busyAction === 'import-gaps'}
+                    onImportGaps={gaps => void importGapsAsFeatures(gaps)}
+                  />
                 </section>
 
                 {/* Step 4: Market Position Map */}

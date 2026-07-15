@@ -191,7 +191,7 @@ function SettingsContent() {
   const name = displayName(profile?.email, profile?.display_name)
 
   return (
-    <div className="page page-narrow">
+    <div className="page">
       <div className="page-head">
         <div>
           <div className="ph-eyebrow">Settings</div>

@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ShareAPI, type Share, type ShareRole } from '@/lib/api/share'
 import { timeAgo } from '@/lib/dashboard/format'
 import * as DI from '@/components/dashboard/Icons'
@@ -87,9 +88,9 @@ export function ShareModal({ ideaId, ideaTitle, onClose }: Props) {
     outline: 'none',
   }
 
-  return (
+  const modal = (
     <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: 480 }}>
+      <div className="modal-box" style={{ maxWidth: 480, background: 'var(--surface)' }}>
         <div className="modal-head">
           <div>
             <div className="eyebrow-mono" style={{ marginBottom: 4 }}>Share idea</div>
@@ -188,4 +189,7 @@ export function ShareModal({ ideaId, ideaTitle, onClose }: Props) {
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return null
+  return createPortal(modal, document.body)
 }

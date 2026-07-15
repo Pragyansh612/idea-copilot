@@ -7,10 +7,19 @@ import * as DI from '@/components/dashboard/Icons'
 type Props = {
   matrix: FeatureMatrix
   loading?: boolean
+  onImportGaps?: (gaps: string[]) => void
+  importingGaps?: boolean
 }
 
-export function CompetitorFeatureMatrix({ matrix, loading }: Props) {
+function shortLabel(label: string, isYou: boolean) {
+  if (isYou) return 'You'
+  if (label.length <= 14) return label
+  return `${label.slice(0, 12)}…`
+}
+
+export function CompetitorFeatureMatrix({ matrix, loading, onImportGaps, importingGaps }: Props) {
   const colCount = matrix.columns.length
+  const lastRowIndex = matrix.rows.length - 1
 
   if (loading) {
     return (
@@ -41,29 +50,40 @@ export function CompetitorFeatureMatrix({ matrix, loading }: Props) {
       <div className="fm-scroll">
         <div
           className="fm-grid"
-          style={{ gridTemplateColumns: `minmax(140px, 1.4fr) repeat(${colCount}, minmax(72px, 1fr))` }}
+          style={{
+            gridTemplateColumns: `minmax(160px, 220px) repeat(${colCount}, minmax(64px, 96px))`,
+          }}
         >
           <div className="fm-cell head row-head">Feature</div>
-          {matrix.columns.map(col => (
-            <div key={col.id} className={`fm-cell head ${col.isYou ? 'you' : ''}`}>
-              {col.label}
+          {matrix.columns.map((col, i) => (
+            <div
+              key={col.id}
+              className={`fm-cell head ${col.isYou ? 'you' : ''} ${i === colCount - 1 ? 'last-col' : ''}`}
+              title={col.label}
+            >
+              {shortLabel(col.label, Boolean(col.isYou))}
             </div>
           ))}
           {matrix.rows.map((row, rowIndex) => {
             const isDiff = matrix.differentiators.includes(row)
             const isGap = matrix.gaps.includes(row)
+            const isLastRow = rowIndex === lastRowIndex
             return (
               <Fragment key={`${row}-${rowIndex}`}>
                 <div
-                  className={`fm-cell row-head ${isDiff ? 'fm-diff' : isGap ? 'fm-gap' : ''}`}
+                  className={`fm-cell row-head ${isDiff ? 'fm-diff' : isGap ? 'fm-gap' : ''} ${isLastRow ? 'last-row' : ''}`}
+                  title={row}
                 >
                   {row}
                 </div>
-                {matrix.columns.map(col => {
+                {matrix.columns.map((col, i) => {
                   const has = Boolean(matrix.cells[row]?.[col.id])
                   return (
-                    <div key={`${row}-${rowIndex}-${col.id}`} className="fm-cell">
-                      {has ? <span className="y" aria-label="yes">✓</span> : <span className="n" aria-label="no">✕</span>}
+                    <div
+                      key={`${row}-${rowIndex}-${col.id}`}
+                      className={`fm-cell ${i === colCount - 1 ? 'last-col' : ''} ${isLastRow ? 'last-row' : ''}`}
+                    >
+                      {has ? <span className="y" aria-label="yes">✓</span> : <span className="n" aria-label="no">·</span>}
                     </div>
                   )
                 })}
@@ -77,10 +97,24 @@ export function CompetitorFeatureMatrix({ matrix, loading }: Props) {
         <span className="fm-legend-item fm-gap">Competitor gaps for you</span>
       </div>
       <div className="fm-summary">
-        <p>
-          <DI.Spark /> You have <b>{matrix.differentiators.length}</b> features competitors don&apos;t.
-          Competitors have <b>{matrix.gaps.length}</b> features you don&apos;t.
-        </p>
+        <DI.Spark />
+        <div style={{ flex: 1 }}>
+          <p>
+            You have <b>{matrix.differentiators.length}</b> features competitors don&apos;t.
+            Competitors have <b>{matrix.gaps.length}</b> features you don&apos;t.
+          </p>
+          {matrix.gaps.length > 0 && onImportGaps && (
+            <button
+              type="button"
+              className="btn-sm ghost"
+              style={{ marginTop: 10 }}
+              disabled={importingGaps}
+              onClick={() => onImportGaps(matrix.gaps)}
+            >
+              <DI.Plus /> {importingGaps ? 'Importing…' : `Import ${matrix.gaps.length} gap${matrix.gaps.length === 1 ? '' : 's'} as features`}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

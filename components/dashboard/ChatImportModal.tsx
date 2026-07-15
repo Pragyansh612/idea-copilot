@@ -1,5 +1,6 @@
 'use client'
 import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChatImportAPI, type ChatSource, type ChatImportResult } from '@/lib/api/chat-import'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
@@ -72,9 +73,9 @@ export function ChatImportModal({ onClose, onDone }: Props) {
     outline: 'none',
   }
 
-  return (
+  const modal = (
     <div className="modal-backdrop" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth: 520 }}>
+      <div className="modal-box" style={{ maxWidth: 520, background: 'var(--surface)' }}>
         <div className="modal-head">
           <div>
             <div className="eyebrow-mono" style={{ marginBottom: 4 }}>
@@ -246,4 +247,7 @@ export function ChatImportModal({ onClose, onDone }: Props) {
       </div>
     </div>
   )
+
+  if (typeof document === 'undefined') return null
+  return createPortal(modal, document.body)
 }

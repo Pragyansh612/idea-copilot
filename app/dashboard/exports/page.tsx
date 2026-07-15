@@ -37,7 +37,7 @@ export default function ExportsPage() {
   }, [load])
 
   return (
-    <div className="page page-narrow">
+    <div className="page">
       <div className="page-head">
         <div>
           <div className="ph-eyebrow">Exports</div>

@@ -98,7 +98,7 @@ function NotificationsContent() {
   const unread = notifications.filter(n => !n.is_read).length
 
   return (
-    <div className="page page-narrow">
+    <div className="page">
       <div className="page-head">
         <div>
           <div className="ph-eyebrow">Notifications · {unread} unread</div>

@@ -296,7 +296,7 @@ function CopilotPageInner() {
   const ideaTitle = contextIdea?.title ?? ideaContext?.idea.title
 
   return (
-    <div className="page page-narrow">
+    <div className="page">
       <div className="page-head">
         <div>
           <div className="ph-eyebrow">AI Copilot · {contextIdea ? contextIdea.title : ideaDraft?.title || 'workspace'}</div>
