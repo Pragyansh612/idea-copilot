@@ -81,8 +81,10 @@ function IntelligenceContent() {
   const [pageError, setPageError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
+  const [competitorPage, setCompetitorPage] = useState(0)
   const discoverOnce = useRef<string | null>(null)
   const gapScrollOnce = useRef<string | null>(null)
+  const intelAbort = useRef<AbortController | null>(null)
 
   const syncIdeaInUrl = useCallback((ideaId: string, extra?: Record<string, string>) => {
     const params = new URLSearchParams()
@@ -147,6 +149,9 @@ function IntelligenceContent() {
 
   const loadIdeaIntel = useCallback(async (ideaId: string) => {
     if (!ideaId) return
+    intelAbort.current?.abort()
+    const ac = new AbortController()
+    intelAbort.current = ac
     try {
       setIdeaDataLoading(true)
       setMatrixLoading(true)
@@ -154,9 +159,11 @@ function IntelligenceContent() {
         IdeaAPI.getIdea(ideaId),
         CompetitorAPI.getCompetitorResearch(ideaId),
       ])
+      if (ac.signal.aborted) return
       const rows = (compData.research || compData.competitors || []) as CompetitorRow[]
       setYourFeatures(detail.features || [])
       setCompetitors(rows)
+      setCompetitorPage(0)
       setGapResult(loadGapResultForIdea(ideaId))
 
       const featMap: Record<string, CompetitorFeature[]> = {}
@@ -170,12 +177,13 @@ function IntelligenceContent() {
           }
           try {
             const fr = await CompetitorAPI.getCompetitorFeatures(apiId)
-            featMap[key] = (fr.features || []) as CompetitorFeature[]
+            if (!ac.signal.aborted) featMap[key] = (fr.features || []) as CompetitorFeature[]
           } catch {
-            featMap[key] = []
+            if (!ac.signal.aborted) featMap[key] = []
           }
         }),
       )
+      if (ac.signal.aborted) return
       setFeaturesByCompetitor(featMap)
       const counts: Record<string, number> = {}
       for (const [cid, feats] of Object.entries(featMap)) {
@@ -191,14 +199,23 @@ function IntelligenceContent() {
         return merged
       })
     } catch (err) {
+      if (ac.signal.aborted) return
       setActionError(err instanceof Error ? err.message : 'Failed to load intelligence data')
       setCompetitors([])
       setYourFeatures([])
       setFeaturesByCompetitor({})
       setGapResult({ items: [] })
     } finally {
-      setIdeaDataLoading(false)
-      setMatrixLoading(false)
+      if (!ac.signal.aborted) {
+        setIdeaDataLoading(false)
+        setMatrixLoading(false)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      intelAbort.current?.abort()
     }
   }, [])
 
@@ -549,69 +566,100 @@ function IntelligenceContent() {
                         }
                       />
                     ) : (
-                      competitors.map((c, idx) => {
-                        const cid = competitorId(c, idx)
-                        const name = competitorDisplayName(c, idx)
-                        const site = competitorWebsite(c)
-                        const desc = competitorDescription(c)
-                        const feats = featuresByCompetitor[cid] || []
-                        const analyzing = busyAction === `analyze-${c.id}`
-                        const quality = competitorScrapeQuality(c)
+                      (() => {
+                        const pageSize = 5
+                        const pages = Math.max(1, Math.ceil(competitors.length / pageSize))
+                        const page = Math.min(competitorPage, pages - 1)
+                        const slice = competitors.slice(page * pageSize, page * pageSize + pageSize)
                         return (
-                          <div key={cid} className="ci-competitor-card">
-                            <div className="ci-competitor-head">
-                              <span className="ci-logo">{name[0]}</span>
-                              <div style={{ flex: 1 }}>
-                                <div className="ci-name">{name}</div>
-                                {site && (
-                                  <a href={site} target="_blank" rel="noreferrer" className="ci-name sub">
-                                    {site.replace(/^https?:\/\//, '').slice(0, 40)}
-                                  </a>
-                                )}
-                              </div>
-                              {quality !== 'ok' && (
-                                <span
-                                  className={`i-tag ${quality === 'low_confidence' ? 'warn' : ''}`}
-                                  title={
-                                    quality === 'blocked'
-                                      ? "This site's analysis was limited. Competitor identified but full features unavailable."
-                                      : undefined
-                                  }
-                                >
-                                  {quality === 'thin' ? 'Limited data' : quality === 'blocked' ? 'Site blocked' : 'Low confidence'}
+                          <>
+                            {slice.map((c, localIdx) => {
+                              const idx = page * pageSize + localIdx
+                              const cid = competitorId(c, idx)
+                              const name = competitorDisplayName(c, idx)
+                              const site = competitorWebsite(c)
+                              const desc = competitorDescription(c)
+                              const feats = featuresByCompetitor[cid] || []
+                              const analyzing = busyAction === `analyze-${c.id}`
+                              const quality = competitorScrapeQuality(c)
+                              return (
+                                <div key={cid} className="ci-competitor-card">
+                                  <div className="ci-competitor-head">
+                                    <span className="ci-logo">{name[0]}</span>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div className="ci-name" title={name}>{name}</div>
+                                      {site && (
+                                        <a href={site} target="_blank" rel="noreferrer" className="ci-name sub" title={site}>
+                                          {site.replace(/^https?:\/\//, '').slice(0, 40)}
+                                        </a>
+                                      )}
+                                    </div>
+                                    {quality !== 'ok' && (
+                                      <span
+                                        className={`i-tag ${quality === 'low_confidence' ? 'warn' : ''}`}
+                                        title={
+                                          quality === 'blocked'
+                                            ? "This site's analysis was limited. Competitor identified but full features unavailable."
+                                            : undefined
+                                        }
+                                      >
+                                        {quality === 'thin' ? 'Limited data' : quality === 'blocked' ? 'Site blocked' : 'Low confidence'}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {desc && <p className="ci-competitor-desc">{desc}</p>}
+                                  <div className="ci-competitor-actions">
+                                    <button
+                                      type="button"
+                                      className="btn-sm solid"
+                                      onClick={() => void analyzeCompetitor(c)}
+                                      disabled={Boolean(busyAction)}
+                                    >
+                                      <DI.Sparkles /> {analyzing ? 'Analyzing…' : 'Analyze'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      className="btn-sm ghost"
+                                      onClick={() => setExpandedFeatures(expandedFeatures === cid ? null : cid)}
+                                    >
+                                      <DI.List /> Features ({feats.length})
+                                    </button>
+                                  </div>
+                                  {expandedFeatures === cid && (
+                                    <ul className="ci-feature-list">
+                                      {feats.length === 0 ? (
+                                        <li style={{ color: 'var(--fg-3)' }}>No extracted features yet. Run Analyze.</li>
+                                      ) : (
+                                        feats.slice(0, 12).map(f => (
+                                          <li key={f.id} title={f.feature_name}>{f.feature_name}</li>
+                                        ))
+                                      )}
+                                      {feats.length > 12 && (
+                                        <li style={{ color: 'var(--fg-3)' }}>+{feats.length - 12} more features</li>
+                                      )}
+                                    </ul>
+                                  )}
+                                </div>
+                              )
+                            })}
+                            {pages > 1 && (
+                              <div className="intel-list-pager">
+                                <span className="intel-list-pager-meta">
+                                  {page * pageSize + 1}–{Math.min((page + 1) * pageSize, competitors.length)} of {competitors.length}
                                 </span>
-                              )}
-                            </div>
-                            {desc && <p className="ci-competitor-desc">{desc.slice(0, 220)}</p>}
-                            <div className="ci-competitor-actions">
-                              <button
-                                type="button"
-                                className="btn-sm solid"
-                                onClick={() => void analyzeCompetitor(c)}
-                                disabled={Boolean(busyAction)}
-                              >
-                                <DI.Sparkles /> {analyzing ? 'Analyzing…' : 'Analyze'}
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-sm ghost"
-                                onClick={() => setExpandedFeatures(expandedFeatures === cid ? null : cid)}
-                              >
-                                <DI.List /> Features ({feats.length})
-                              </button>
-                            </div>
-                            {expandedFeatures === cid && (
-                              <ul className="ci-feature-list">
-                                {feats.length === 0 ? (
-                                  <li style={{ color: 'var(--fg-3)' }}>No extracted features yet. Run Analyze.</li>
-                                ) : (
-                                  feats.map(f => <li key={f.id}>{f.feature_name}</li>)
-                                )}
-                              </ul>
+                                <div className="fm-pager">
+                                  <button type="button" className="btn-sm ghost" disabled={page <= 0} onClick={() => setCompetitorPage(p => Math.max(0, p - 1))}>
+                                    Previous
+                                  </button>
+                                  <button type="button" className="btn-sm ghost" disabled={page >= pages - 1} onClick={() => setCompetitorPage(p => Math.min(pages - 1, p + 1))}>
+                                    Next
+                                  </button>
+                                </div>
+                              </div>
                             )}
-                          </div>
+                          </>
                         )
-                      })
+                      })()
                     )}
                   </div>
                 </section>

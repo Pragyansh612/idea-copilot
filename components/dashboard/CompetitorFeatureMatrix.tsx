@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import type { FeatureMatrix } from '@/lib/dashboard/competitor-intel'
 import * as DI from '@/components/dashboard/Icons'
 
@@ -11,15 +11,38 @@ type Props = {
   importingGaps?: boolean
 }
 
+const ROWS_PER_PAGE = 8
+const COLS_PER_PAGE = 5 // including "You" when present
+
 function shortLabel(label: string, isYou: boolean) {
   if (isYou) return 'You'
-  if (label.length <= 14) return label
-  return `${label.slice(0, 12)}…`
+  if (label.length <= 12) return label
+  return `${label.slice(0, 10)}…`
 }
 
 export function CompetitorFeatureMatrix({ matrix, loading, onImportGaps, importingGaps }: Props) {
-  const colCount = matrix.columns.length
-  const lastRowIndex = matrix.rows.length - 1
+  const [rowPage, setRowPage] = useState(0)
+  const [colPage, setColPage] = useState(0)
+
+  const youCol = matrix.columns.find(c => c.isYou)
+  const otherCols = matrix.columns.filter(c => !c.isYou)
+  const colPages = Math.max(1, Math.ceil(otherCols.length / Math.max(1, COLS_PER_PAGE - (youCol ? 1 : 0))))
+  const visibleOthers = useMemo(() => {
+    const size = Math.max(1, COLS_PER_PAGE - (youCol ? 1 : 0))
+    const start = Math.min(colPage, colPages - 1) * size
+    return otherCols.slice(start, start + size)
+  }, [otherCols, colPage, colPages, youCol])
+
+  const visibleCols = useMemo(
+    () => (youCol ? [youCol, ...visibleOthers] : visibleOthers),
+    [youCol, visibleOthers],
+  )
+
+  const rowPages = Math.max(1, Math.ceil(matrix.rows.length / ROWS_PER_PAGE))
+  const safeRowPage = Math.min(rowPage, rowPages - 1)
+  const visibleRows = matrix.rows.slice(safeRowPage * ROWS_PER_PAGE, safeRowPage * ROWS_PER_PAGE + ROWS_PER_PAGE)
+  const colCount = visibleCols.length
+  const lastVisibleRowIndex = visibleRows.length - 1
 
   if (loading) {
     return (
@@ -45,17 +68,40 @@ export function CompetitorFeatureMatrix({ matrix, loading, onImportGaps, importi
     <div className="feature-mat">
       <div className="ci-panel-head">
         <span>Feature comparison matrix</span>
-        <span className="live">live data</span>
+        <span className="live">{matrix.rows.length} features · {matrix.columns.length} columns</span>
+      </div>
+      <div className="fm-toolbar">
+        <span className="fm-toolbar-meta">
+          Rows {safeRowPage * ROWS_PER_PAGE + 1}–{Math.min((safeRowPage + 1) * ROWS_PER_PAGE, matrix.rows.length)} of {matrix.rows.length}
+        </span>
+        <div className="fm-pager">
+          <button type="button" className="btn-sm ghost" disabled={safeRowPage <= 0} onClick={() => setRowPage(p => Math.max(0, p - 1))}>
+            Prev features
+          </button>
+          <button type="button" className="btn-sm ghost" disabled={safeRowPage >= rowPages - 1} onClick={() => setRowPage(p => Math.min(rowPages - 1, p + 1))}>
+            Next features
+          </button>
+        </div>
+        {otherCols.length > COLS_PER_PAGE - (youCol ? 1 : 0) && (
+          <div className="fm-pager">
+            <button type="button" className="btn-sm ghost" disabled={colPage <= 0} onClick={() => setColPage(p => Math.max(0, p - 1))}>
+              Prev competitors
+            </button>
+            <button type="button" className="btn-sm ghost" disabled={colPage >= colPages - 1} onClick={() => setColPage(p => Math.min(colPages - 1, p + 1))}>
+              Next competitors
+            </button>
+          </div>
+        )}
       </div>
       <div className="fm-scroll">
         <div
           className="fm-grid"
           style={{
-            gridTemplateColumns: `minmax(160px, 220px) repeat(${colCount}, minmax(64px, 96px))`,
+            gridTemplateColumns: `minmax(140px, 200px) repeat(${colCount}, minmax(56px, 88px))`,
           }}
         >
           <div className="fm-cell head row-head">Feature</div>
-          {matrix.columns.map((col, i) => (
+          {visibleCols.map((col, i) => (
             <div
               key={col.id}
               className={`fm-cell head ${col.isYou ? 'you' : ''} ${i === colCount - 1 ? 'last-col' : ''}`}
@@ -64,19 +110,19 @@ export function CompetitorFeatureMatrix({ matrix, loading, onImportGaps, importi
               {shortLabel(col.label, Boolean(col.isYou))}
             </div>
           ))}
-          {matrix.rows.map((row, rowIndex) => {
+          {visibleRows.map((row, rowIndex) => {
             const isDiff = matrix.differentiators.includes(row)
             const isGap = matrix.gaps.includes(row)
-            const isLastRow = rowIndex === lastRowIndex
+            const isLastRow = rowIndex === lastVisibleRowIndex
             return (
               <Fragment key={`${row}-${rowIndex}`}>
                 <div
                   className={`fm-cell row-head ${isDiff ? 'fm-diff' : isGap ? 'fm-gap' : ''} ${isLastRow ? 'last-row' : ''}`}
                   title={row}
                 >
-                  {row}
+                  <span className="fm-row-label">{row}</span>
                 </div>
-                {matrix.columns.map((col, i) => {
+                {visibleCols.map((col, i) => {
                   const has = Boolean(matrix.cells[row]?.[col.id])
                   return (
                     <div

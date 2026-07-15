@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AuthAPI, type AuthUser } from '@/lib/api/auth'
 import { IdeaAPI, PhaseAPI, type Idea } from '@/lib/api/idea'
@@ -25,12 +25,32 @@ import {
   computeWorkspaceHealth,
   generateWorkspaceInsights,
 } from '@/lib/dashboard/workspace-intelligence'
+import { getCached, peekStale, setCached } from '@/lib/dashboard/query-cache'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
+
+const DASH_CACHE_KEY = 'dashboard:home'
+const DASH_TTL_MS = 90_000
+
+type DashSnapshot = {
+  authUser: AuthUser | null
+  ideas: Idea[]
+  readinessEntries: [string, ReadinessSignals][]
+  recentProgress: Record<string, ReturnType<typeof phaseProgress>>
+  nextAction: ReturnType<typeof buildDashboardNextAction>
+  nextActionIdeaId: string | null
+  nextActionPercent: number
+  competitorNudge: { id: string; title: string } | null
+  profileName?: string
+  recentAchievements: Array<{ title: string; icon?: string }>
+  xp: number
+  level: number
+}
 
 export default function DashboardHome() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
   const [ideas, setIdeas] = useState<Idea[]>([])
@@ -44,10 +64,31 @@ export default function DashboardHome() {
   const [recentAchievements, setRecentAchievements] = useState<Array<{ title: string; icon?: string }>>([])
   const [xp, setXp] = useState(0)
   const [level, setLevel] = useState(1)
+  const abortRef = useRef<AbortController | null>(null)
 
-  async function load() {
+  function applySnapshot(snap: DashSnapshot) {
+    setAuthUser(snap.authUser)
+    setIdeas(snap.ideas)
+    setReadinessByIdea(new Map(snap.readinessEntries))
+    setRecentProgress(snap.recentProgress)
+    setNextAction(snap.nextAction)
+    setNextActionIdeaId(snap.nextActionIdeaId)
+    setNextActionPercent(snap.nextActionPercent)
+    setCompetitorNudge(snap.competitorNudge)
+    setProfileName(snap.profileName)
+    setRecentAchievements(snap.recentAchievements)
+    setXp(snap.xp)
+    setLevel(snap.level)
+  }
+
+  async function load(opts?: { soft?: boolean }) {
+    abortRef.current?.abort()
+    const ac = new AbortController()
+    abortRef.current = ac
+    const soft = Boolean(opts?.soft)
     try {
-      setLoading(true)
+      if (soft) setRefreshing(true)
+      else setLoading(true)
       setError(null)
       const [me, stats, ideasData, profile, achievements] = await Promise.all([
         AuthAPI.getMe(),
@@ -56,20 +97,10 @@ export default function DashboardHome() {
         import('@/lib/api/user').then(m => m.UserAPI.getProfile()).catch(() => null),
         import('@/lib/api/achievement').then(m => m.AchievementAPI.getUserAchievements()).catch(() => []),
       ])
-      setAuthUser(me)
-      setProfileName(profile?.display_name)
-      setRecentAchievements(
-        [...achievements]
-          .sort((a, b) => new Date(b.unlocked_at).getTime() - new Date(a.unlocked_at).getTime())
-          .slice(0, 3)
-          .map(a => ({ title: a.title, icon: a.icon })),
-      )
-      setIdeas(ideasData.ideas)
-      setXp(stats?.total_xp ?? 0)
-      setLevel(stats?.current_level ?? 1)
+      if (ac.signal.aborted) return
 
       const snapshots = await fetchReadinessMapForIdeas(ideasData.ideas, { activeOnly: true })
-      setReadinessByIdea(snapshots)
+      if (ac.signal.aborted) return
 
       const recent = ideasData.ideas.slice(0, 3)
       const progressPairs = await Promise.all(
@@ -78,36 +109,59 @@ export default function DashboardHome() {
           return [idea.id, phaseProgress(phases)] as const
         }),
       )
-      setRecentProgress(Object.fromEntries(progressPairs))
+      if (ac.signal.aborted) return
 
+      const recentProgressMap = Object.fromEntries(progressPairs)
       const lowest = pickLowestReadinessIdea(ideasData.ideas, snapshots)
-      if (lowest) {
-        setNextAction(buildDashboardNextAction(lowest.idea, lowest.signals))
-        setNextActionIdeaId(lowest.idea.id)
-        setNextActionPercent(lowest.percent)
-      } else {
-        setNextAction(null)
-        setNextActionIdeaId(null)
-        setNextActionPercent(100)
-      }
-
       const activeIdeas = ideasData.ideas.filter(i => !i.is_archived && i.status !== 'archived')
       const withoutResearch = activeIdeas.find(idea => {
         const s = snapshots.get(idea.id)
         return s && !s.hasCompetitors
       })
-      setCompetitorNudge(
-        withoutResearch ? { id: withoutResearch.id, title: withoutResearch.title } : null,
-      )
+
+      const snap: DashSnapshot = {
+        authUser: me,
+        ideas: ideasData.ideas,
+        readinessEntries: [...snapshots.entries()],
+        recentProgress: recentProgressMap,
+        nextAction: lowest ? buildDashboardNextAction(lowest.idea, lowest.signals) : null,
+        nextActionIdeaId: lowest?.idea.id ?? null,
+        nextActionPercent: lowest?.percent ?? 100,
+        competitorNudge: withoutResearch ? { id: withoutResearch.id, title: withoutResearch.title } : null,
+        profileName: profile?.display_name,
+        recentAchievements: [...achievements]
+          .sort((a, b) => new Date(b.unlocked_at).getTime() - new Date(a.unlocked_at).getTime())
+          .slice(0, 3)
+          .map(a => ({ title: a.title, icon: a.icon })),
+        xp: stats?.total_xp ?? 0,
+        level: stats?.current_level ?? 1,
+      }
+      applySnapshot(snap)
+      setCached(DASH_CACHE_KEY, snap, DASH_TTL_MS)
     } catch (err) {
+      if (ac.signal.aborted) return
       setError(err instanceof Error ? err.message : 'Failed to load dashboard')
     } finally {
-      setLoading(false)
+      if (!ac.signal.aborted) {
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
   }
 
   useEffect(() => {
-    load()
+    const fresh = getCached<DashSnapshot>(DASH_CACHE_KEY)
+    const stale = fresh ?? peekStale<DashSnapshot>(DASH_CACHE_KEY)
+    if (stale) {
+      applySnapshot(stale)
+      setLoading(false)
+      void load({ soft: true })
+    } else {
+      void load()
+    }
+    return () => {
+      abortRef.current?.abort()
+    }
   }, [])
 
   const name = displayName(authUser?.email, profileName)
@@ -141,7 +195,10 @@ export default function DashboardHome() {
         <div>
           <div className="ph-eyebrow">Dashboard</div>
           <h1>Welcome back, <em>{name}</em>.</h1>
-          <div className="ph-sub">Your workspace surfaces what needs attention — not just what exists.</div>
+          <div className="ph-sub">
+            Your workspace surfaces what needs attention — not just what exists.
+            {refreshing && <span className="dash-refreshing"> · updating…</span>}
+          </div>
         </div>
         <div className="page-head-actions">
           <button type="button" className="btn-sm solid" onClick={() => router.push(routes.newIdea)}><DI.Plus/> New idea</button>
@@ -149,7 +206,7 @@ export default function DashboardHome() {
         </div>
       </div>
 
-      {error && <PageError message={error} onRetry={load} />}
+      {error && <PageError message={error} onRetry={() => void load()} />}
 
       {loading && !error && <PageLoading label="Loading your workspace…" />}
 

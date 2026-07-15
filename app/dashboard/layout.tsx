@@ -15,6 +15,7 @@ import { UserAPI, type UserProfile } from '@/lib/api/user'
 import { displayName } from '@/lib/dashboard/format'
 import { redirectToLogin } from '@/lib/auth/session'
 import { TokenManager } from '@/lib/auth/tokens'
+import { getCached, setCached } from '@/lib/dashboard/query-cache'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
@@ -111,6 +112,25 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false
+    const cacheKey = 'nav:meta'
+
+    type NavMeta = {
+      profile: UserProfile | null
+      accountEmail: string
+      ideaCount: number
+      unreadCount: number
+    }
+
+    const cached = getCached<NavMeta>(cacheKey)
+    if (cached) {
+      setProfile(cached.profile)
+      setAccountEmail(cached.accountEmail)
+      setIdeaCount(cached.ideaCount)
+      setUnreadCount(cached.unreadCount)
+      // Fresh enough — skip re-fetch on every nav click
+      return () => { cancelled = true }
+    }
+
     async function loadNavMeta() {
       try {
         const [prof, ideas, notifs, me] = await Promise.all([
@@ -120,10 +140,17 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           AuthAPI.getMe().catch(() => null),
         ])
         if (cancelled) return
-        setProfile(prof)
-        setAccountEmail(me?.email ?? prof.email ?? '')
-        setIdeaCount(ideas.total)
-        setUnreadCount(notifs.unread_count)
+        const next: NavMeta = {
+          profile: prof,
+          accountEmail: me?.email ?? prof.email ?? '',
+          ideaCount: ideas.total,
+          unreadCount: notifs.unread_count,
+        }
+        setProfile(next.profile)
+        setAccountEmail(next.accountEmail)
+        setIdeaCount(next.ideaCount)
+        setUnreadCount(next.unreadCount)
+        setCached(cacheKey, next, 45_000)
       } catch {
         if (!cancelled) {
           setProfile(null)
@@ -132,7 +159,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         }
       }
     }
-    loadNavMeta()
+    void loadNavMeta()
     return () => { cancelled = true }
   }, [pathname])
 
