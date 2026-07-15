@@ -78,10 +78,11 @@ function IntelligenceContent() {
   const [discoverJob, setDiscoverJob] = useState<DiscoverJobState | null>(null)
   const [gapAnalyzing, setGapAnalyzing] = useState(false)
   const [insightsLoading, setInsightsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [pageError, setPageError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
-  const discoverOnce = useRef(false)
-  const gapScrollOnce = useRef(false)
+  const discoverOnce = useRef<string | null>(null)
+  const gapScrollOnce = useRef<string | null>(null)
 
   const syncIdeaInUrl = useCallback((ideaId: string, extra?: Record<string, string>) => {
     const params = new URLSearchParams()
@@ -126,29 +127,29 @@ function IntelligenceContent() {
   const loadIdeas = useCallback(async () => {
     try {
       setIdeasLoading(true)
-      setError(null)
+      setPageError(null)
       const r = await IdeaAPI.getIdeas({ limit: 50, sort_by: 'updated_at', sort_order: 'desc' })
       setIdeas(r.ideas)
       const preselect = searchParams.get('idea')
       if (preselect && r.ideas.some(i => i.id === preselect)) {
         setSelectedIdeaId(preselect)
       } else if (r.ideas[0]) {
-        setSelectedIdeaId(r.ideas[0].id)
+        setSelectedIdeaId(prev => prev || r.ideas[0].id)
       }
-      void loadWorkspaceAggregates(r.ideas)
+      void loadWorkspaceAggregates(r.ideas.slice(0, 20))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load ideas')
+      setPageError(err instanceof Error ? err.message : 'Failed to load ideas')
     } finally {
       setIdeasLoading(false)
     }
-  }, [loadWorkspaceAggregates, searchParams])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only initial idea query param; URL sync must not re-fetch
+  }, [loadWorkspaceAggregates])
 
   const loadIdeaIntel = useCallback(async (ideaId: string) => {
     if (!ideaId) return
     try {
       setIdeaDataLoading(true)
       setMatrixLoading(true)
-      setError(null)
       const [detail, compData] = await Promise.all([
         IdeaAPI.getIdea(ideaId),
         CompetitorAPI.getCompetitorResearch(ideaId),
@@ -190,7 +191,7 @@ function IntelligenceContent() {
         return merged
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load intelligence data')
+      setActionError(err instanceof Error ? err.message : 'Failed to load intelligence data')
       setCompetitors([])
       setYourFeatures([])
       setFeaturesByCompetitor({})
@@ -204,6 +205,14 @@ function IntelligenceContent() {
   useEffect(() => {
     loadIdeas()
   }, [loadIdeas])
+
+  // Apply idea from URL when searchParams change without reloading the whole list
+  useEffect(() => {
+    const preselect = searchParams.get('idea')
+    if (preselect && ideas.some(i => i.id === preselect) && preselect !== selectedIdeaId) {
+      setSelectedIdeaId(preselect)
+    }
+  }, [searchParams, ideas, selectedIdeaId])
 
   useEffect(() => {
     if (selectedIdeaId) loadIdeaIntel(selectedIdeaId)
@@ -225,33 +234,37 @@ function IntelligenceContent() {
     const ideaId = selectedIdeaId
     try {
       setBusyAction('discover')
-      setError(null)
+      setActionError(null)
       await startDiscoverJob(ideaId, async () => {
         const result = await IdeaAPI.discoverCompetitors(ideaId)
         await loadIdeaIntel(ideaId)
-        await loadWorkspaceAggregates(ideas)
+        await loadWorkspaceAggregates(ideas.slice(0, 20))
         return result
       })
       const done = getDiscoverJob(ideaId)
       if (done.resultSummary) setToast(done.resultSummary)
-      else if (done.error) setError(done.error)
+      else if (done.error) setActionError(done.error)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Competitor discovery failed')
+      setActionError(err instanceof Error ? err.message : 'Competitor discovery failed')
     } finally {
       setBusyAction(null)
     }
   }, [selectedIdeaId, discoverJob?.status, loadIdeaIntel, loadWorkspaceAggregates, ideas])
 
   useEffect(() => {
-    if (searchParams.get('discover') !== '1' || !selectedIdeaId || ideasLoading || discoverOnce.current) return
-    discoverOnce.current = true
+    if (searchParams.get('discover') !== '1' || !selectedIdeaId || ideasLoading) return
+    const key = `${selectedIdeaId}:discover`
+    if (discoverOnce.current === key) return
+    discoverOnce.current = key
     syncIdeaInUrl(selectedIdeaId)
     void discoverCompetitors()
   }, [searchParams, selectedIdeaId, ideasLoading, syncIdeaInUrl, discoverCompetitors])
 
   useEffect(() => {
-    if (searchParams.get('gap') !== '1' || !selectedIdeaId || ideasLoading || gapScrollOnce.current) return
-    gapScrollOnce.current = true
+    if (searchParams.get('gap') !== '1' || !selectedIdeaId || ideasLoading) return
+    const key = `${selectedIdeaId}:gap`
+    if (gapScrollOnce.current === key) return
+    gapScrollOnce.current = key
     syncIdeaInUrl(selectedIdeaId)
     requestAnimationFrame(() => {
       document.getElementById('intel-gap-analysis')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -278,7 +291,7 @@ function IntelligenceContent() {
     const url = competitorWebsite(c)
     try {
       setBusyAction(`analyze-${c.id}`)
-      setError(null)
+      setActionError(null)
       if (url) {
         await CompetitorAPI.scrapeCompetitors({
           idea_id: selectedIdeaId,
@@ -292,7 +305,7 @@ function IntelligenceContent() {
       await loadWorkspaceAggregates(ideas)
       setToast('Competitor analysis complete.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Analysis failed')
+      setActionError(err instanceof Error ? err.message : 'Analysis failed')
     } finally {
       setBusyAction(null)
     }
@@ -302,7 +315,7 @@ function IntelligenceContent() {
     if (!selectedIdeaId || gaps.length === 0) return
     try {
       setBusyAction('import-gaps')
-      setError(null)
+      setActionError(null)
       const existing = new Set(yourFeatures.map(f => f.title.trim().toLowerCase()))
       let added = 0
       for (const title of gaps) {
@@ -318,7 +331,7 @@ function IntelligenceContent() {
       await loadIdeaIntel(selectedIdeaId)
       setToast(added > 0 ? `Imported ${added} feature${added === 1 ? '' : 's'} from competitor gaps.` : 'Those gaps are already in your feature list.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to import gap features')
+      setActionError(err instanceof Error ? err.message : 'Failed to import gap features')
     } finally {
       setBusyAction(null)
     }
@@ -328,7 +341,7 @@ function IntelligenceContent() {
     if (!selectedIdeaId) return
     try {
       setGapAnalyzing(true)
-      setError(null)
+      setActionError(null)
       const result = await IdeaAPI.marketGapAnalysis(selectedIdeaId)
       const normalized = normalizeGapResult(result)
       setGapResult(normalized)
@@ -339,7 +352,7 @@ function IntelligenceContent() {
         document.getElementById('intel-opportunities')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
       })
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Market gap analysis failed')
+      setActionError(err instanceof Error ? err.message : 'Market gap analysis failed')
     } finally {
       setGapAnalyzing(false)
     }
@@ -349,12 +362,12 @@ function IntelligenceContent() {
     if (!selectedIdeaId) return
     try {
       setInsightsLoading(true)
-      setError(null)
+      setActionError(null)
       const result = await IdeaAPI.runCompetitorAnalysis(selectedIdeaId)
       setStrategicAnalysis(normalizeStrategicAnalysis(result))
       setToast('Strategic insights generated.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate insights')
+      setActionError(err instanceof Error ? err.message : 'Failed to generate insights')
     } finally {
       setInsightsLoading(false)
     }
@@ -384,9 +397,9 @@ function IntelligenceContent() {
         </div>
       </div>
 
-      {error && (
+      {pageError && (
         <PageError
-          message={error}
+          message={pageError}
           onRetry={() => {
             loadIdeas()
             if (selectedIdeaId) loadIdeaIntel(selectedIdeaId)
@@ -394,9 +407,16 @@ function IntelligenceContent() {
         />
       )}
 
-      {!error && ideasLoading && <PageLoading label="Loading intelligence workspace…" />}
+      {actionError && !pageError && (
+        <div className="dash-card" style={{ padding: '12px 16px', marginBottom: 12, borderColor: 'var(--bad)', display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center' }}>
+          <span style={{ color: 'var(--fg)', fontSize: 13 }}>{actionError}</span>
+          <button type="button" className="btn-sm ghost" onClick={() => setActionError(null)}>Dismiss</button>
+        </div>
+      )}
 
-      {!error && !ideasLoading && (
+      {!pageError && ideasLoading && <PageLoading label="Loading intelligence workspace…" />}
+
+      {!pageError && !ideasLoading && (
         <>
           <div className="ci-summary-bar">
             {[
@@ -476,7 +496,7 @@ function IntelligenceContent() {
                       <div className="discover-progress-head">
                         {discoverJob.status === 'running' && <div className="spin-ring" />}
                         {discoverJob.status === 'running'
-                          ? 'Discovery in progress — you can leave this page and come back'
+                          ? 'Discovery in progress — soft-nav away is OK; a full page reload will stop the request'
                           : discoverJob.status === 'error'
                             ? 'Discovery failed'
                             : discoverJob.resultSummary || 'Discovery finished'}

@@ -88,16 +88,21 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    // Keep cookies in sync with localStorage so proxy keeps allowing /dashboard.
+    let cancelled = false
     async function guard() {
-      if (TokenManager.isAuthenticated()) {
-        const { ensureAuthCookies } = await import('@/lib/auth/session')
-        await ensureAuthCookies()
-        return
+      const { ensureAuthCookies } = await import('@/lib/auth/session')
+      // Refresh + sync cookies when access JWT expired but refresh remains.
+      if (TokenManager.getRefreshToken() || TokenManager.isAuthenticated()) {
+        const ok = await ensureAuthCookies()
+        if (cancelled) return
+        if (ok && TokenManager.isAuthenticated()) return
       }
-      await redirectToLogin(pathname)
+      if (!cancelled) await redirectToLogin(pathname)
     }
     void guard()
+    return () => {
+      cancelled = true
+    }
   }, [pathname])
 
   useEffect(() => {

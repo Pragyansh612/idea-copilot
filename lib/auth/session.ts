@@ -24,17 +24,45 @@ export async function clearSession(): Promise<void> {
   }
 }
 
+/** Debounce cookie sync so navigation does not POST set-cookies every route change. */
+let lastCookieSyncAt = 0
+const COOKIE_SYNC_TTL_MS = 45_000
+
 /**
  * Ensure Next.js cookies match localStorage tokens so proxy.ts can
  * allow /dashboard (localStorage alone is invisible to the edge proxy).
+ * If the access JWT is expired but a refresh token remains, refresh first.
  */
 export async function ensureAuthCookies(): Promise<boolean> {
-  // Prefer raw tokens right after signup — expiry parse must not block cookie set
-  const access = TokenManager.getRawAccessToken() || TokenManager.getAccessToken()
   const refresh = TokenManager.getRefreshToken()
-  if (!access || !refresh) return false
+  if (!TokenManager.isAuthenticated() && refresh) {
+    try {
+      const { AuthAPI } = await import('@/lib/api/auth')
+      const res = await AuthAPI.refreshToken(refresh)
+      const session = res.data?.session
+      const nextAccess = session?.access_token
+      const nextRefresh = session?.refresh_token || refresh
+      if (!nextAccess) return false
+      TokenManager.setTokens(nextAccess, nextRefresh)
+      lastCookieSyncAt = 0 // force cookie write after refresh
+    } catch (err) {
+      console.error('Token refresh failed', err)
+      return false
+    }
+  }
+
+  const access = TokenManager.getAccessToken() || TokenManager.getRawAccessToken()
+  const refreshNow = TokenManager.getRefreshToken()
+  if (!access || !refreshNow) return false
+
+  const now = Date.now()
+  if (now - lastCookieSyncAt < COOKIE_SYNC_TTL_MS && TokenManager.isAuthenticated()) {
+    return true
+  }
+
   try {
-    await syncAuthCookies(access, refresh)
+    await syncAuthCookies(access, refreshNow)
+    lastCookieSyncAt = now
     return true
   } catch (err) {
     console.error('ensureAuthCookies failed', err)

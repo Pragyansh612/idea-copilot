@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { AuthAPI } from '@/lib/api/auth'
 import { clearSession, enterAuthenticatedApp } from '@/lib/auth/session'
+import { safeRedirectPath } from '@/lib/auth/safe-redirect'
 import { TokenManager } from '@/lib/auth/tokens'
 import { routes } from '@/lib/routes'
 
@@ -47,10 +48,7 @@ export default function SignupPage() {
 function SignupForm() {
   const searchParams = useSearchParams()
   const redirectParam = searchParams.get('redirect')
-  const redirectTo =
-    redirectParam && redirectParam.startsWith('/')
-      ? redirectParam
-      : routes.newIdea
+  const redirectTo = safeRedirectPath(redirectParam, routes.newIdea)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')

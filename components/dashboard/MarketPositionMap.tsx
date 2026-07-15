@@ -13,7 +13,16 @@ function clipLabel(label: string, isYou: boolean) {
 }
 
 export function MarketPositionMap({ points }: Props) {
-  if (points.length === 0) return null
+  if (points.length === 0) {
+    return (
+      <div className="dash-card ci-position-map">
+        <div className="eyebrow-mono">Market position map</div>
+        <p className="ci-position-map-desc">
+          Add your features and analyze competitors to plot coverage vs innovation. Discover competitors first, then run Analyze on each.
+        </p>
+      </div>
+    )
+  }
 
   const padL = 44
   const padR = 28
