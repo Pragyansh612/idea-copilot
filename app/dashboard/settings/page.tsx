@@ -270,7 +270,20 @@ function SettingsContent() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
                 {editingProfile ? (
                   <>
-                    <button type="button" className="btn-sm ghost" onClick={() => setEditingProfile(false)} disabled={savingProfile}>
+                    <button
+                      type="button"
+                      className="btn-sm ghost"
+                      onClick={() => {
+                        setProfileForm({
+                          display_name: profile?.display_name ?? '',
+                          username: profile?.username ?? '',
+                          bio: profile?.bio ?? '',
+                          timezone: profile?.timezone ?? 'UTC',
+                        })
+                        setEditingProfile(false)
+                      }}
+                      disabled={savingProfile}
+                    >
                       Cancel
                     </button>
                     <button type="button" className="btn-sm solid" onClick={() => void saveProfile()} disabled={savingProfile}>

@@ -9,7 +9,6 @@ import { StrategicInsightsCard } from '@/components/dashboard/StrategicInsightsC
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import { Toast } from '@/components/dashboard/Toast'
 import * as DI from '@/components/dashboard/Icons'
-import { CopilotAPI } from '@/lib/api/copilot'
 import {
   CompetitorAPI,
   IdeaAPI,
@@ -23,16 +22,17 @@ import {
   competitorDescription,
   competitorDisplayName,
   competitorId,
+  competitorScrapeQuality,
   competitorWebsite,
   computeWorkspaceStats,
-  parseStrategicInsights,
+  normalizeStrategicAnalysis,
   type CompetitorFeature,
   type CompetitorRow,
-  type StrategicSection,
+  type StrategicAnalysis,
   type WorkspaceCompetitorStats,
 } from '@/lib/dashboard/competitor-intel'
-import { normalizeGaps, type GapItem } from '@/lib/dashboard/gaps'
-import { loadGapsForIdea, saveGapsForIdea } from '@/lib/dashboard/gap-storage'
+import { normalizeGapResult, type MarketGapResult } from '@/lib/dashboard/gaps'
+import { loadGapResultForIdea, saveGapsForIdea } from '@/lib/dashboard/gap-storage'
 import { routes } from '@/lib/routes'
 
 const FLOW_STEPS = [
@@ -52,7 +52,7 @@ function IntelligenceContent() {
   const [selectedIdeaId, setSelectedIdeaId] = useState('')
   const [competitors, setCompetitors] = useState<CompetitorRow[]>([])
   const [yourFeatures, setYourFeatures] = useState<Feature[]>([])
-  const [gaps, setGaps] = useState<GapItem[]>([])
+  const [gapResult, setGapResult] = useState<MarketGapResult>({ items: [] })
   const [competitorsByIdea, setCompetitorsByIdea] = useState<Record<string, CompetitorRow[]>>({})
   const [featuresByCompetitor, setFeaturesByCompetitor] = useState<Record<string, CompetitorFeature[]>>({})
   const [featureCountByCompetitor, setFeatureCountByCompetitor] = useState<Record<string, number>>({})
@@ -63,7 +63,7 @@ function IntelligenceContent() {
     marketGapsFound: 0,
   })
   const [expandedFeatures, setExpandedFeatures] = useState<string | null>(null)
-  const [strategicSections, setStrategicSections] = useState<StrategicSection[] | null>(null)
+  const [strategicAnalysis, setStrategicAnalysis] = useState<StrategicAnalysis | null>(null)
   const [ideasLoading, setIdeasLoading] = useState(true)
   const [ideaDataLoading, setIdeaDataLoading] = useState(false)
   const [matrixLoading, setMatrixLoading] = useState(false)
@@ -148,7 +148,7 @@ function IntelligenceContent() {
       const rows = (compData.research || compData.competitors || []) as CompetitorRow[]
       setYourFeatures(detail.features || [])
       setCompetitors(rows)
-      setGaps(loadGapsForIdea(ideaId))
+      setGapResult(loadGapResultForIdea(ideaId))
 
       const featMap: Record<string, CompetitorFeature[]> = {}
       await Promise.all(
@@ -186,7 +186,7 @@ function IntelligenceContent() {
       setCompetitors([])
       setYourFeatures([])
       setFeaturesByCompetitor({})
-      setGaps([])
+      setGapResult({ items: [] })
     } finally {
       setIdeaDataLoading(false)
       setMatrixLoading(false)
@@ -206,10 +206,25 @@ function IntelligenceContent() {
     try {
       setBusyAction('discover')
       setError(null)
-      await IdeaAPI.discoverCompetitors(selectedIdeaId)
+      const result = await IdeaAPI.discoverCompetitors(selectedIdeaId)
       await loadIdeaIntel(selectedIdeaId)
       await loadWorkspaceAggregates(ideas)
-      setToast('Competitor discovery complete.')
+
+      const rejectedCount = result.rejected?.length ?? 0
+      if (result.cached) {
+        const age = result.cache_age_days
+        setToast(
+          age != null
+            ? `Showing cached results from ${age} day${age === 1 ? '' : 's'} ago. Use Refresh to re-run.`
+            : 'Showing cached competitor results.'
+        )
+      } else if (rejectedCount > 0) {
+        setToast(
+          `Discovery complete — ${result.discovered ?? 0} competitor(s) found, ${rejectedCount} candidate(s) skipped as not relevant.`
+        )
+      } else {
+        setToast('Competitor discovery complete.')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Competitor discovery failed')
     } finally {
@@ -273,30 +288,14 @@ function IntelligenceContent() {
     }
   }
 
-  async function runCompetitorAnalysis() {
-    if (!selectedIdeaId) return
-    try {
-      setBusyAction('comp-analysis')
-      setError(null)
-      await IdeaAPI.runCompetitorAnalysis(selectedIdeaId)
-      await loadIdeaIntel(selectedIdeaId)
-      await loadWorkspaceAggregates(ideas)
-      setToast('Strategy analysis complete.')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Strategy analysis failed')
-    } finally {
-      setBusyAction(null)
-    }
-  }
-
   async function runGapAnalysis() {
     if (!selectedIdeaId) return
     try {
       setGapAnalyzing(true)
       setError(null)
       const result = await IdeaAPI.marketGapAnalysis(selectedIdeaId)
-      const normalized = normalizeGaps(result)
-      setGaps(normalized)
+      const normalized = normalizeGapResult(result)
+      setGapResult(normalized)
       saveGapsForIdea(selectedIdeaId, normalized)
       await loadWorkspaceAggregates(ideas)
       setToast('Market gap analysis complete.')
@@ -311,19 +310,12 @@ function IntelligenceContent() {
   }
 
   async function generateStrategicInsights() {
-    if (!selectedIdea) return
-    const names = competitors.map((c, i) => competitorDisplayName(c, i)).join(', ')
-    const prompt = `Based on my idea "${selectedIdea.title}" and these competitors: ${names || 'none yet'}, give me:
-1. Top 3 competitor weaknesses
-2. Top 3 opportunities for my product
-3. The single fastest differentiator I can build
-
-Use numbered lists under clear headings.`
+    if (!selectedIdeaId) return
     try {
       setInsightsLoading(true)
       setError(null)
-      const res = await CopilotAPI.chat({ query: prompt, idea_id: selectedIdea.id })
-      setStrategicSections(parseStrategicInsights(res.response))
+      const result = await IdeaAPI.runCompetitorAnalysis(selectedIdeaId)
+      setStrategicAnalysis(normalizeStrategicAnalysis(result))
       setToast('Strategic insights generated.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate insights')
@@ -334,9 +326,9 @@ Use numbered lists under clear headings.`
 
   function selectIdea(id: string) {
     setSelectedIdeaId(id)
-    setStrategicSections(null)
+    setStrategicAnalysis(null)
     setExpandedFeatures(null)
-    setGaps(loadGapsForIdea(id))
+    setGapResult(loadGapResultForIdea(id))
     syncIdeaInUrl(id)
   }
 
@@ -453,14 +445,9 @@ Use numbered lists under clear headings.`
                       <p>Deep-dive each competitor — extract features and positioning.</p>
                     </div>
                     {competitors.length > 0 && (
-                      <button
-                        type="button"
-                        className="btn-sm ghost"
-                        onClick={() => void runCompetitorAnalysis()}
-                        disabled={busyAction === 'comp-analysis' || Boolean(busyAction)}
-                      >
-                        <DI.Sparkles /> {busyAction === 'comp-analysis' ? 'Analyzing…' : 'Run all strategy analysis'}
-                      </button>
+                      <a href="#intel-strategic" className="btn-sm ghost">
+                        <DI.Sparkles /> Compare strategy in step 7
+                      </a>
                     )}
                   </header>
 
@@ -491,11 +478,12 @@ Use numbered lists under clear headings.`
                         const desc = competitorDescription(c)
                         const feats = featuresByCompetitor[cid] || []
                         const analyzing = busyAction === `analyze-${c.id}`
+                        const quality = competitorScrapeQuality(c)
                         return (
                           <div key={cid} className="ci-competitor-card">
                             <div className="ci-competitor-head">
                               <span className="ci-logo">{name[0]}</span>
-                              <div>
+                              <div style={{ flex: 1 }}>
                                 <div className="ci-name">{name}</div>
                                 {site && (
                                   <a href={site} target="_blank" rel="noreferrer" className="ci-name sub">
@@ -503,6 +491,18 @@ Use numbered lists under clear headings.`
                                   </a>
                                 )}
                               </div>
+                              {quality !== 'ok' && (
+                                <span
+                                  className={`i-tag ${quality === 'low_confidence' ? 'warn' : ''}`}
+                                  title={
+                                    quality === 'blocked'
+                                      ? "This site's analysis was limited. Competitor identified but full features unavailable."
+                                      : undefined
+                                  }
+                                >
+                                  {quality === 'thin' ? 'Limited data' : quality === 'blocked' ? 'Site blocked' : 'Low confidence'}
+                                </span>
+                              )}
                             </div>
                             {desc && <p className="ci-competitor-desc">{desc.slice(0, 220)}</p>}
                             <div className="ci-competitor-actions">
@@ -591,7 +591,7 @@ Use numbered lists under clear headings.`
                       <p>Actionable gaps ranked by opportunity score.</p>
                     </div>
                   </header>
-                  {gaps.length === 0 && !gapAnalyzing ? (
+                  {gapResult.items.length === 0 && !gapAnalyzing ? (
                     <div className="dash-card intel-empty-opportunities">
                       <DI.Target />
                       <p>No opportunities yet. Run gap analysis in step 5 to generate opportunity cards.</p>
@@ -605,7 +605,15 @@ Use numbered lists under clear headings.`
                       </button>
                     </div>
                   ) : (
-                    selectedIdeaId && <MarketGapResults gaps={gaps} ideaId={selectedIdeaId} />
+                    selectedIdeaId && (
+                      <MarketGapResults
+                        gaps={gapResult.items}
+                        ideaId={selectedIdeaId}
+                        confidence={gapResult.confidence}
+                        confidenceReason={gapResult.confidence_reason}
+                        onDiscoverCompetitors={() => void discoverCompetitors()}
+                      />
+                    )
                   )}
                 </section>
 
@@ -615,13 +623,14 @@ Use numbered lists under clear headings.`
                     <span className="intel-flow-step-num">7</span>
                     <div>
                       <h2>Strategic insights</h2>
-                      <p>Copilot briefing on weaknesses, opportunities, and your fastest differentiator.</p>
+                      <p>AI briefing on weaknesses, opportunities, and your fastest differentiator — grounded in your tracked competitors.</p>
                     </div>
                   </header>
                   <StrategicInsightsCard
-                    sections={strategicSections}
+                    analysis={strategicAnalysis}
                     loading={insightsLoading}
                     onGenerate={generateStrategicInsights}
+                    onDiscoverCompetitors={() => void discoverCompetitors()}
                   />
                 </section>
               </div>

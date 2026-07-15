@@ -6,7 +6,7 @@ import { isAccessTokenExpired } from '@/lib/auth/jwt'
  * Protects /dashboard/* only. Public marketing + /product/* stay open.
  * Rejects missing or expired JWT cookies to avoid glitchy half-authenticated states.
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
   const isDashboardPath = path.startsWith('/dashboard')
   const token = request.cookies.get('access_token')?.value?.trim() || ''

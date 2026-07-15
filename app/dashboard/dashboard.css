@@ -713,7 +713,7 @@ body.app-body {
 }
 .idea:hover { border-color: var(--line-3); transform: translateY(-2px); }
 .idea .i-row1 { display: flex; align-items: center; gap: 10px; }
-.idea .i-tag {
+.i-tag {
   font-family: var(--font-mono);
   font-size: 10px;
   letter-spacing: 0.1em;
@@ -723,13 +723,14 @@ body.app-body {
   border-radius: 4px;
   background: color-mix(in srgb, var(--fg) 4%, transparent);
   border: 1px solid var(--line);
+  white-space: nowrap;
 }
-.idea .i-tag.hot {
+.i-tag.hot {
   color: var(--accent);
   background: var(--accent-soft);
   border-color: var(--accent-line);
 }
-.idea .i-tag.warn {
+.i-tag.warn {
   color: var(--warn);
   background: color-mix(in srgb, var(--warn) 10%, transparent);
   border-color: color-mix(in srgb, var(--warn) 30%, transparent);

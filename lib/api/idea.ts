@@ -143,6 +143,8 @@ export interface CompetitorResearch {
   differentiation_opportunities?: string[];
   market_position?: string;
   confidence_score?: number;
+  /** `null`/`undefined` (pre-scrape-quality rows) should be treated as "ok". */
+  scrape_quality?: 'ok' | 'thin' | 'blocked' | 'low_confidence' | null;
   created_at: string;
   updated_at: string;
 }
@@ -151,6 +153,22 @@ export interface CompetitorScrapeRequest {
   idea_id: string;
   urls: string[];
   analyze?: boolean;
+}
+
+export interface RejectedCandidate {
+  url: string;
+  name?: string;
+  reason?: string;
+}
+
+export interface DiscoverCompetitorsResult {
+  success?: boolean;
+  discovered?: number;
+  competitors?: CompetitorResearch[];
+  rejected?: RejectedCandidate[];
+  cached?: boolean;
+  cache_age_days?: number | null;
+  request_id?: string;
 }
 
 // ==================== CATEGORY TYPES ====================
@@ -183,6 +201,7 @@ export interface Idea {
   user_id: string;
   title: string;
   description?: string;
+  target_market?: string | null;
   capture_type: string;
   tags: string[];
   category_id?: string;
@@ -230,6 +249,7 @@ export interface IdeaCreate {
 export interface IdeaUpdate {
   title?: string;
   description?: string;
+  target_market?: string;
   tags?: string[];
   category_id?: string;
   priority?: PriorityEnum;
@@ -530,7 +550,7 @@ export class IdeaAPI {
     return result.data.gaps;
   }
 
-  static async discoverCompetitors(ideaId: string): Promise<unknown> {
+  static async discoverCompetitors(ideaId: string): Promise<DiscoverCompetitorsResult> {
     const result = await fetchWithAuth(`${API_URL}/api/ideas/${ideaId}/discover-competitors`, {
       method: 'POST',
     });

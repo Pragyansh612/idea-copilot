@@ -25,9 +25,63 @@ export type FeatureMatrix = {
   gaps: string[]
 }
 
-export type StrategicSection = {
-  title: string
-  items: string[]
+export type OverallPosition = 'strong' | 'competitive' | 'at_risk' | 'unknown'
+
+export type FeatureComparisonRow = {
+  feature: string
+  your_idea: 'has' | 'missing' | 'partial'
+  competitors: string[]
+  importance: 'critical' | 'important' | 'nice_to_have'
+}
+
+export type FeatureGap = {
+  feature: string
+  description?: string
+  competitor_count?: number
+  urgency?: 'high' | 'medium' | 'low'
+}
+
+export type CompetitorWeakness = {
+  competitor_name: string
+  weakness: string
+  opportunity?: string
+}
+
+/** Normalized `POST /api/ideas/{id}/competitor-analysis` response ("Strategic Insights"). */
+export type StrategicAnalysis = {
+  feature_comparison: FeatureComparisonRow[]
+  your_strengths: string[]
+  your_weaknesses: string[]
+  feature_gaps: FeatureGap[]
+  competitor_weaknesses: CompetitorWeakness[]
+  strategy_advice: string[]
+  overall_position: OverallPosition
+  fastest_differentiator?: string
+  summary?: string
+  /** Present when the backend short-circuits with no competitor data yet. */
+  message?: string
+}
+
+function asStringArray(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+}
+
+export function normalizeStrategicAnalysis(data: unknown): StrategicAnalysis {
+  const o = (data && typeof data === 'object' ? (data as Record<string, unknown>) : {}) as Record<string, unknown>
+  const position = o.overall_position
+  return {
+    feature_comparison: Array.isArray(o.feature_comparison) ? (o.feature_comparison as FeatureComparisonRow[]) : [],
+    your_strengths: asStringArray(o.your_strengths),
+    your_weaknesses: asStringArray(o.your_weaknesses),
+    feature_gaps: Array.isArray(o.feature_gaps) ? (o.feature_gaps as FeatureGap[]) : [],
+    competitor_weaknesses: Array.isArray(o.competitor_weaknesses) ? (o.competitor_weaknesses as CompetitorWeakness[]) : [],
+    strategy_advice: asStringArray(o.strategy_advice),
+    overall_position:
+      position === 'strong' || position === 'competitive' || position === 'at_risk' ? position : 'unknown',
+    fastest_differentiator: typeof o.fastest_differentiator === 'string' ? o.fastest_differentiator : undefined,
+    summary: typeof o.summary === 'string' ? o.summary : undefined,
+    message: typeof o.message === 'string' ? o.message : undefined,
+  }
 }
 
 export type PositionPoint = {
@@ -36,6 +90,15 @@ export type PositionPoint = {
   x: number
   y: number
   isYou?: boolean
+}
+
+export type ScrapeQuality = 'ok' | 'thin' | 'blocked' | 'low_confidence'
+
+/** `null`/`undefined`/unrecognized scrape_quality is treated as "ok" for backward compatibility. */
+export function competitorScrapeQuality(c: CompetitorRow): ScrapeQuality {
+  const v = c.scrape_quality
+  if (v === 'thin' || v === 'blocked' || v === 'low_confidence') return v
+  return 'ok'
 }
 
 function normFeatureName(name: string): string {
@@ -188,51 +251,3 @@ export function buildPositionMap(
   return points
 }
 
-export function parseStrategicInsights(text: string): StrategicSection[] {
-  const sections: StrategicSection[] = []
-  const lines = text.split('\n').map(l => l.trim().replace(/\*\*/g, '')).filter(Boolean)
-  let current: StrategicSection | null = null
-
-  for (const line of lines) {
-    const mdHeading = line.match(/^#{1,3}\s+(.+)/)
-    if (mdHeading && /weakness|opportunit|differentiator|strength|insight/i.test(mdHeading[1])) {
-      if (current?.items.length) sections.push(current)
-      current = { title: mdHeading[1].replace(/:$/, ''), items: [] }
-      continue
-    }
-
-    const heading = line.match(/^(?:#+\s*|\d+\.\s*)?(.{3,80}):?\s*$/i)
-    const bullet = line.match(/^(?:[-*•]|\d+\.)\s+(.+)/)
-
-    if (heading && !bullet && /weakness|opportunit|differentiator|strength/i.test(line)) {
-      if (current?.items.length) sections.push(current)
-      current = { title: heading[1].replace(/:$/, ''), items: [] }
-      continue
-    }
-
-    if (bullet) {
-      if (!current) current = { title: 'Insights', items: [] }
-      current.items.push(bullet[1])
-      continue
-    }
-
-    if (/weakness|opportunit|differentiator/i.test(line) && line.length < 90) {
-      if (current?.items.length) sections.push(current)
-      current = { title: line.replace(/:$/, ''), items: [] }
-    }
-  }
-
-  if (current?.items.length) sections.push(current)
-
-  if (sections.length === 0) {
-    const bullets = lines
-      .map(l => l.match(/^(?:[-*•]|\d+\.)\s+(.+)/)?.[1])
-      .filter((x): x is string => Boolean(x))
-    if (bullets.length) {
-      return [{ title: 'Strategic insights', items: bullets }]
-    }
-    return [{ title: 'Strategic insights', items: [text.slice(0, 500)] }]
-  }
-
-  return sections
-}

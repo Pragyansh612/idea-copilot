@@ -149,7 +149,7 @@ function gapSummary(ideaId: string): string {
   if (gaps.length === 0) return 'No market gap analysis stored yet.'
   return gaps
     .slice(0, 5)
-    .map(g => `- ${g.title || g.description || 'Gap'}${g.confidence_score != null ? ` (score ${g.confidence_score})` : ''}`)
+    .map(g => `- ${g.title || g.description || 'Gap'}${g.potential_impact ? ` (${g.potential_impact} impact)` : ''}`)
     .join('\n')
 }
 

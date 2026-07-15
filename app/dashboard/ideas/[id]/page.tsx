@@ -71,9 +71,24 @@ function IdeaDetailContent() {
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [marketGapDone, setMarketGapDone] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
+  const [toastVariant, setToastVariant] = useState<'success' | 'error'>('success')
   const [exportBusy, setExportBusy] = useState<'markdown' | 'pdf' | null>(null)
+
+  // Action-level failures (toggling a feature, generating suggestions, etc.) surface as a
+  // dismissible toast — only the initial `load()` failure (see `error` state) should blank
+  // the whole page, since every other action failure still leaves a fully-loaded idea behind it.
+  function showError(message: string) {
+    setToastVariant('error')
+    setToast(message)
+  }
+  function showSuccess(message: string) {
+    setToastVariant('success')
+    setToast(message)
+  }
   const [editingDescription, setEditingDescription] = useState(false)
   const [descriptionDraft, setDescriptionDraft] = useState('')
+  const [editingTargetMarket, setEditingTargetMarket] = useState(false)
+  const [targetMarketDraft, setTargetMarketDraft] = useState('')
   const phaseNameRef = useRef<HTMLInputElement>(null)
   const welcomedRef = useRef(false)
   const { setIdeaDetailTitle } = useDashboardChrome()
@@ -85,7 +100,7 @@ function IdeaDetailContent() {
   useEffect(() => {
     if (searchParams.get('created') !== '1' || loading || !idea || welcomedRef.current) return
     welcomedRef.current = true
-    setToast('Idea created! Work through the checklist below — each step takes about a minute.')
+    showSuccess('Idea created! Work through the checklist below — each step takes about a minute.')
     setTab('overview')
     if (!idea.description?.trim()) {
       setDescriptionDraft('')
@@ -149,6 +164,7 @@ function IdeaDetailContent() {
       setIdea(detail.idea)
       setIdeaDetailTitle(detail.idea.title)
       setDescriptionDraft(detail.idea.description || '')
+      setTargetMarketDraft(detail.idea.target_market || '')
       setFeatures(detail.features || [])
       setPhases(detail.phases || [])
       setSuggestions(sugs)
@@ -174,7 +190,7 @@ function IdeaDetailContent() {
       const updated = await FeatureAPI.updateFeature(feature.id, { is_completed: !feature.is_completed })
       setFeatures(prev => prev.map(f => (f.id === feature.id ? updated : f)))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update feature')
+      showError(err instanceof Error ? err.message : 'Failed to update feature')
     }
   }
 
@@ -191,7 +207,7 @@ function IdeaDetailContent() {
       setNewPhaseName('')
       setNewPhaseDesc('')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create phase')
+      showError(err instanceof Error ? err.message : 'Failed to create phase')
     } finally {
       setBusyAction(null)
     }
@@ -206,7 +222,7 @@ function IdeaDetailContent() {
       setFeatures(prev => [...prev, feature])
       setFeatureDraftByPhase(prev => ({ ...prev, [phaseId]: '' }))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add feature')
+      showError(err instanceof Error ? err.message : 'Failed to add feature')
     } finally {
       setBusyAction(null)
     }
@@ -219,7 +235,7 @@ function IdeaDetailContent() {
       const fresh = await AIAPI.getSuggestions(ideaId)
       setSuggestions(fresh)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate AI suggestions')
+      showError(err instanceof Error ? err.message : 'Failed to generate AI suggestions')
     } finally {
       setBusyAction(null)
     }
@@ -231,9 +247,9 @@ function IdeaDetailContent() {
       const itemType = suggestionItemType(s)
       await AIAPI.createFromSuggestion({ suggestion_id: s.id, item_type: itemType, idea_id: ideaId })
       await load()
-      setToast(`Added to your idea as a ${itemType}.`)
+      showSuccess(`Added to your idea as a ${itemType}.`)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add suggestion')
+      showError(err instanceof Error ? err.message : 'Failed to add suggestion')
     } finally {
       setBusyAction(null)
     }
@@ -244,9 +260,9 @@ function IdeaDetailContent() {
       setBusyAction('upload')
       const att = await AttachmentAPI.upload(ideaId, file)
       setAttachments(prev => [att, ...prev])
-      setToast('File uploaded.')
+      showSuccess('File uploaded.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed')
+      showError(err instanceof Error ? err.message : 'Upload failed')
     } finally {
       setBusyAction(null)
     }
@@ -263,9 +279,9 @@ function IdeaDetailContent() {
       a.download = `${idea?.title || 'idea'}.md`
       a.click()
       URL.revokeObjectURL(url)
-      setToast('Markdown export downloaded.')
+      showSuccess('Markdown export downloaded.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Export failed')
+      showError(err instanceof Error ? err.message : 'Export failed')
     } finally {
       setExportBusy(null)
     }
@@ -285,9 +301,9 @@ function IdeaDetailContent() {
       a.download = `${idea?.title || 'idea'}.pdf`
       a.click()
       URL.revokeObjectURL(url)
-      setToast('PDF export downloaded.')
+      showSuccess('PDF export downloaded.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'PDF export failed')
+      showError(err instanceof Error ? err.message : 'PDF export failed')
     } finally {
       setExportBusy(null)
     }
@@ -301,9 +317,23 @@ function IdeaDetailContent() {
       const updated = await IdeaAPI.updateIdea(ideaId, { description: text })
       setIdea(updated)
       setEditingDescription(false)
-      setToast('Description saved.')
+      showSuccess('Description saved.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save description')
+      showError(err instanceof Error ? err.message : 'Failed to save description')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
+  async function saveTargetMarket() {
+    try {
+      setBusyAction('target_market')
+      const updated = await IdeaAPI.updateIdea(ideaId, { target_market: targetMarketDraft.trim() })
+      setIdea(updated)
+      setEditingTargetMarket(false)
+      showSuccess('Target market saved.')
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to save target market')
     } finally {
       setBusyAction(null)
     }
@@ -319,7 +349,7 @@ function IdeaDetailContent() {
       const res = await CopilotAPI.chat({ query: text, idea_id: ideaId })
       setCopilotMessages(prev => [...prev, { role: 'ai', text: res.response }])
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Copilot request failed')
+      showError(err instanceof Error ? err.message : 'Copilot request failed')
     } finally {
       setBusyAction(null)
     }
@@ -397,7 +427,7 @@ function IdeaDetailContent() {
 
   return (
     <div className="page">
-      {toast && <Toast message={toast} onDismiss={() => setToast(null)} />}
+      {toast && <Toast message={toast} variant={toastVariant} onDismiss={() => setToast(null)} />}
       <div className="page-head">
         <div>
           <div className="ph-eyebrow">Idea · {statusLabel(idea.status)}</div>
@@ -592,6 +622,51 @@ function IdeaDetailContent() {
                     </div>
                   </div>
                 )}
+                <div className="dash-card" style={{ padding: 12 }} id="idea-target-market">
+                  <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Target market</div>
+                  {editingTargetMarket ? (
+                    <>
+                      <input
+                        value={targetMarketDraft}
+                        onChange={e => setTargetMarketDraft(e.target.value)}
+                        placeholder="e.g. Engineering managers at remote-first startups with 10–50 person teams"
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--line-2)', background: 'var(--bg-2)', color: 'var(--fg)', font: 'inherit', fontSize: 14 }}
+                      />
+                      <p style={{ color: 'var(--fg-3)', fontSize: 12, marginTop: 6 }}>Helps competitor discovery find more relevant results</p>
+                      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                        <button type="button" className="btn-sm solid" onClick={() => void saveTargetMarket()} disabled={busyAction === 'target_market'}>
+                          {busyAction === 'target_market' ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-sm ghost"
+                          onClick={() => {
+                            setTargetMarketDraft(idea.target_market || '')
+                            setEditingTargetMarket(false)
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                      <p style={{ color: idea.target_market?.trim() ? 'var(--fg-2)' : 'var(--fg-3)', fontSize: 14, margin: 0 }}>
+                        {idea.target_market?.trim() || 'Not set — helps competitor discovery find more relevant results.'}
+                      </p>
+                      <button
+                        type="button"
+                        className="btn-sm ghost"
+                        onClick={() => {
+                          setTargetMarketDraft(idea.target_market || '')
+                          setEditingTargetMarket(true)
+                        }}
+                      >
+                        Edit
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <div className="dash-card" style={{ padding: 12 }}>
                   <div className="eyebrow-mono" style={{ marginBottom: 10 }}>Generate AI Suggestions</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>

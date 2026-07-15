@@ -1,7 +1,7 @@
 'use client'
 import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { AuthAPI } from '@/lib/api/auth'
 import { clearSession } from '@/lib/auth/session'
 import { syncAuthCookies } from '@/lib/auth/sync-cookies'
@@ -47,6 +47,8 @@ export default function SignupPage() {
 
 function SignupForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirectTo = searchParams.get('redirect')
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
@@ -65,7 +67,7 @@ function SignupForm() {
       }
       try {
         await AuthAPI.getMe()
-        if (!cancelled) router.replace(routes.dashboard)
+        if (!cancelled) router.replace(redirectTo || routes.dashboard)
       } catch {
         await clearSession()
         if (!cancelled) setIsCheckingAuth(false)
@@ -98,7 +100,7 @@ function SignupForm() {
       await syncAuthCookies(access_token, refresh_token)
 
       await new Promise(resolve => setTimeout(resolve, 150))
-      window.location.href = routes.newIdea
+      window.location.href = redirectTo || routes.newIdea
     } catch (error) {
       setErr(error instanceof Error ? error.message : 'Signup failed. Please try again.')
     } finally {

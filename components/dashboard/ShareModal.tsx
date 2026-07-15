@@ -18,6 +18,7 @@ export function ShareModal({ ideaId, ideaTitle, onClose }: Props) {
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const emailRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -28,10 +29,11 @@ export function ShareModal({ ideaId, ideaTitle, onClose }: Props) {
   async function load() {
     try {
       setLoading(true)
+      setLoadError(null)
       const result = await ShareAPI.getShares(ideaId)
       setShares(result.filter(s => s.is_active))
-    } catch {
-      // silently ignore — share list is secondary
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Failed to load collaborators')
     } finally {
       setLoading(false)
     }
@@ -138,6 +140,15 @@ export function ShareModal({ ideaId, ideaTitle, onClose }: Props) {
             </div>
             {loading ? (
               <p style={{ color: 'var(--fg-3)', fontSize: 13 }}>Loading…</p>
+            ) : loadError ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <p style={{ color: 'var(--warn)', fontSize: 13, margin: 0 }}>
+                  Couldn&apos;t load collaborators: {loadError}
+                </p>
+                <button type="button" className="btn-sm ghost" onClick={() => void load()}>
+                  Retry
+                </button>
+              </div>
             ) : shares.length === 0 ? (
               <p style={{ color: 'var(--fg-3)', fontSize: 13 }}>
                 Only you have access. Invite someone above.

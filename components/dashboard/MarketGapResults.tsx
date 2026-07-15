@@ -1,38 +1,54 @@
 'use client'
 
 import { useRouter } from 'next/navigation'
-import type { GapItem } from '@/lib/dashboard/gaps'
+import type { ConfidenceLevel, GapItem } from '@/lib/dashboard/gaps'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
 function impactFromGap(gap: GapItem): 'high' | 'medium' | 'low' {
-  const text = `${gap.urgency || ''} ${gap.tam || ''} ${gap.title || ''}`.toLowerCase()
-  if (text.includes('high') || text.includes('urgent') || text.includes('large')) return 'high'
-  if (text.includes('low') || text.includes('small')) return 'low'
+  if (gap.potential_impact) return gap.potential_impact
   return 'medium'
-}
-
-function scoreFromText(text: string | undefined): number {
-  if (!text) return 50
-  const n = Number(text)
-  if (Number.isFinite(n)) return Math.max(0, Math.min(100, n))
-  const t = text.toLowerCase()
-  if (t.includes('high')) return 80
-  if (t.includes('low')) return 30
-  return 55
 }
 
 type Props = {
   gaps: GapItem[]
   ideaId: string
+  confidence?: ConfidenceLevel
+  confidenceReason?: string
+  onDiscoverCompetitors?: () => void
 }
 
-export function MarketGapResults({ gaps, ideaId }: Props) {
+export function MarketGapResults({ gaps, ideaId, confidence, confidenceReason, onDiscoverCompetitors }: Props) {
   const router = useRouter()
   if (gaps.length === 0) return null
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
+      {confidence === 'low' && (
+        <div className="dash-card" style={{ borderColor: 'color-mix(in srgb, var(--warn) 40%, var(--line))' }}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <DI.Radar style={{ color: 'var(--warn)', flexShrink: 0, marginTop: 2 }} />
+            <div style={{ display: 'grid', gap: 8 }}>
+              <p style={{ color: 'var(--fg)', fontSize: 13.5, lineHeight: 1.55, margin: 0 }}>
+                Limited competitor data available. Run competitor discovery first for more specific insights.
+              </p>
+              {confidenceReason && (
+                <p style={{ color: 'var(--fg-3)', fontSize: 12, margin: 0 }}>{confidenceReason}</p>
+              )}
+              {onDiscoverCompetitors && (
+                <button type="button" className="btn-sm solid" onClick={onDiscoverCompetitors} style={{ justifySelf: 'start' }}>
+                  <DI.Radar /> Discover competitors
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {confidence === 'medium' && (
+        <p style={{ color: 'var(--fg-3)', fontSize: 12.5, margin: 0 }}>
+          Based on partial competitor data.
+        </p>
+      )}
       <div className="dash-card">
         <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Opportunity map</div>
         <svg viewBox="0 0 460 220" className="gap-opportunity-chart" role="img" aria-label="Market gap opportunity chart">
@@ -42,12 +58,13 @@ export function MarketGapResults({ gaps, ideaId }: Props) {
           <text x="10" y="100" transform="rotate(-90 10 100)" textAnchor="middle" fill="var(--fg-3)" fontSize="10">Opportunity size (low → high)</text>
           {gaps.map((g, idx) => {
             const x = 40 + (idx / Math.max(gaps.length - 1, 1)) * 380
-            const y = 180 - (scoreFromText(g.urgency || g.tam) / 100) * 150
+            const impactScore = { high: 85, medium: 55, low: 30 }[impactFromGap(g)]
+            const y = 180 - (impactScore / 100) * 150
             return (
               <g key={`${g.title || idx}`}>
                 <circle cx={x} cy={y} r={6} fill="var(--accent)" />
                 <text x={x + 8} y={y - 8} fill="var(--fg)" fontSize="10">
-                  {(g.title || g.opportunity || `Opp ${idx + 1}`).slice(0, 22)}
+                  {(g.title || `Opp ${idx + 1}`).slice(0, 22)}
                 </text>
               </g>
             )
@@ -56,21 +73,23 @@ export function MarketGapResults({ gaps, ideaId }: Props) {
       </div>
       {gaps.map((g, i) => {
         const impact = impactFromGap(g)
-        const title = g.title || g.opportunity || 'Market opportunity'
+        const title = g.title || 'Market opportunity'
         const discussPrompt = `Help me evaluate this market opportunity for my idea: "${title}". ${g.description || ''}`
         return (
           <div key={`${title}-${i}`} className="dash-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
-              <div className="eyebrow-mono">
-                #{String(i + 1).padStart(2, '0')}
-                {g.confidence_score != null && ` · ${Math.round(g.confidence_score)}% conf`}
-              </div>
+              <div className="eyebrow-mono">#{String(i + 1).padStart(2, '0')}</div>
               <span className={`i-tag ${impact === 'high' ? 'hot' : impact === 'low' ? '' : 'accent'}`}>impact · {impact}</span>
             </div>
             <h3 style={{ marginBottom: 8 }}>{title}</h3>
-            <p style={{ color: 'var(--fg-2)', fontSize: 14, lineHeight: 1.55, marginBottom: 10 }}>
+            <p style={{ color: 'var(--fg-2)', fontSize: 14, lineHeight: 1.55, marginBottom: g.evidence ? 8 : 10 }}>
               {g.description || 'No description provided.'}
             </p>
+            {g.evidence && (
+              <p style={{ color: 'var(--fg-3)', fontSize: 12.5, lineHeight: 1.5, marginBottom: 10, fontStyle: 'italic' }}>
+                Based on: {g.evidence}
+              </p>
+            )}
             <button
               type="button"
               className="btn-sm ghost"

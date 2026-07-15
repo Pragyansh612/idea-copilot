@@ -71,8 +71,12 @@ function NotificationsContent() {
 
   async function markAllRead() {
     const unread = notifications.filter(n => !n.is_read)
-    await Promise.all(unread.map(n => NotificationAPI.markAsRead(n.id)))
-    await load()
+    try {
+      await Promise.all(unread.map(n => NotificationAPI.markAsRead(n.id)))
+      await load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to mark all as read')
+    }
   }
 
   async function openNotification(n: Notification) {

@@ -50,7 +50,11 @@ export default function LoginPage() {
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect') || '/dashboard'
+  const redirectParam = searchParams.get('redirect')
+  const redirectTo = redirectParam || '/dashboard'
+  const signupHref = redirectParam
+    ? `${routes.signup}?redirect=${encodeURIComponent(redirectParam)}`
+    : routes.signup
   const messageParam = searchParams.get('message')
   const infoMessage =
     messageParam === 'session_expired'
@@ -224,7 +228,7 @@ function LoginForm() {
         </form>
 
         <div style={{ marginTop: 20, textAlign: 'center', fontSize: 13, color: 'var(--fg-2)' }}>
-          No account? <Link href={routes.signup} style={{ color: 'var(--accent)' }}>Create one free</Link>
+          No account? <Link href={signupHref} style={{ color: 'var(--accent)' }}>Create one free</Link>
         </div>
         <div style={{ marginTop: 12, textAlign: 'center' }}>
           <Link href={routes.home} style={{ fontSize: 13, color: 'var(--fg-2)' }}>← Back to landing page</Link>

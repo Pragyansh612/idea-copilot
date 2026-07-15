@@ -44,6 +44,9 @@ type Message = {
   extractableList?: ExtractableList | null
   ideaId?: string
   appliedToIdea?: boolean
+  failed?: boolean
+  retryQuery?: string
+  retryOptions?: { reportId?: QuickReportId }
 }
 
 export default function CopilotPage() {
@@ -214,6 +217,8 @@ function CopilotPageInner() {
       display: options?.reportId ? quickReportTitle(options.reportId) : query,
       kind: options?.reportId ? 'report' : 'chat',
       reportTitle: options?.reportId ? quickReportTitle(options.reportId) : undefined,
+      retryQuery: query,
+      retryOptions: options,
     }
     setMessages(prev => [...prev, userMsg])
 
@@ -238,9 +243,16 @@ function CopilotPageInner() {
       await refreshHistory()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Copilot request failed')
+      setMessages(prev => prev.map(m => (m.id === userMsg.id ? { ...m, failed: true } : m)))
     } finally {
       setSending(false)
     }
+  }
+
+  function retryMessage(m: Message) {
+    if (!m.retryQuery || sending) return
+    setMessages(prev => prev.filter(msg => msg.id !== m.id))
+    void sendMessage(m.retryQuery, m.retryOptions)
   }
 
   async function runQuickReport(reportId: QuickReportId) {
@@ -409,6 +421,19 @@ function CopilotPageInner() {
                   ) : (
                     <div className="cp-bubble" style={{ whiteSpace: 'pre-wrap' }}>
                       {m.role === 'user' && m.display ? m.display : m.content}
+                    </div>
+                  )}
+                  {m.role === 'user' && m.failed && (
+                    <div className="cp-msg-failed" style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 12.5, color: 'var(--warn)' }}>Message failed to send.</span>
+                      <button
+                        type="button"
+                        className="cp-add-to-idea"
+                        onClick={() => retryMessage(m)}
+                        disabled={sending}
+                      >
+                        Retry
+                      </button>
                     </div>
                   )}
                   {m.role === 'ai' && m.extractableList && m.ideaId && m.kind !== 'report' && (

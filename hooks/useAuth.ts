@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TokenManager } from '@/lib/auth/tokens';
+import { AuthAPI } from '@/lib/api/auth';
+import { clearSession } from '@/lib/auth/session';
 
 export function useAuth() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -8,8 +10,27 @@ export function useAuth() {
   const router = useRouter();
 
   useEffect(() => {
-    setIsAuthenticated(TokenManager.isAuthenticated());
-    setIsLoading(false);
+    let cancelled = false;
+    async function verify() {
+      if (!TokenManager.isAuthenticated()) {
+        if (!cancelled) {
+          setIsAuthenticated(false);
+          setIsLoading(false);
+        }
+        return;
+      }
+      try {
+        await AuthAPI.getMe();
+        if (!cancelled) setIsAuthenticated(true);
+      } catch {
+        await clearSession();
+        if (!cancelled) setIsAuthenticated(false);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    }
+    void verify();
+    return () => { cancelled = true };
   }, []);
 
   const logout = async () => {

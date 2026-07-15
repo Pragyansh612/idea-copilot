@@ -21,6 +21,11 @@ function CommentItem({
   onReply,
   onDelete,
   onEdit,
+  editingId,
+  editText,
+  onEditTextChange,
+  onEditSave,
+  onEditCancel,
 }: {
   comment: Comment
   depth: number
@@ -28,43 +33,65 @@ function CommentItem({
   onReply: (parentId: string, authorEmail: string | null) => void
   onDelete: (id: string) => void
   onEdit: (id: string, current: string) => void
+  editingId: string | null
+  editText: string
+  onEditTextChange: (text: string) => void
+  onEditSave: (id: string) => void
+  onEditCancel: () => void
 }) {
   const isOwn = currentUserId && comment.user_id === currentUserId
+  const isEditing = editingId === comment.id
 
   return (
     <div className={`cmt-item ${depth > 0 ? 'cmt-reply' : ''}`} style={{ marginLeft: depth > 0 ? 28 : 0 }}>
-      <div className="cmt-row">
-        <div className="cmt-av">{authorInitial(comment.author_email)}</div>
-        <div className="cmt-body">
-          <div className="cmt-meta">
-            <span className="cmt-author">{comment.author_email ?? 'You'}</span>
-            <span className="cmt-time">{timeAgo(comment.created_at)}</span>
-            {comment.is_ai_generated && (
-              <span className="cmt-ai-badge"><DI.Sparkles /> Copilot</span>
-            )}
-          </div>
-          <div className="cmt-text">{comment.content}</div>
-          <div className="cmt-actions">
-            <button
-              type="button"
-              className="cmt-act"
-              onClick={() => onReply(comment.id, comment.author_email)}
-            >
-              <DI.Chat /> Reply
-            </button>
-            {isOwn && (
-              <>
-                <button type="button" className="cmt-act" onClick={() => onEdit(comment.id, comment.content)}>
-                  <DI.Pencil /> Edit
-                </button>
-                <button type="button" className="cmt-act danger" onClick={() => onDelete(comment.id)}>
-                  <DI.Trash /> Delete
-                </button>
-              </>
-            )}
+      {isEditing ? (
+        <div className="cmt-edit-wrap dash-card">
+          <textarea
+            className="cmt-input"
+            rows={3}
+            value={editText}
+            onChange={e => onEditTextChange(e.target.value)}
+            autoFocus
+          />
+          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+            <button type="button" className="btn-sm solid" onClick={() => onEditSave(comment.id)}>Save</button>
+            <button type="button" className="btn-sm ghost" onClick={onEditCancel}>Cancel</button>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="cmt-row">
+          <div className="cmt-av">{authorInitial(comment.author_email)}</div>
+          <div className="cmt-body">
+            <div className="cmt-meta">
+              <span className="cmt-author">{comment.author_email ?? 'You'}</span>
+              <span className="cmt-time">{timeAgo(comment.created_at)}</span>
+              {comment.is_ai_generated && (
+                <span className="cmt-ai-badge"><DI.Sparkles /> Copilot</span>
+              )}
+            </div>
+            <div className="cmt-text">{comment.content}</div>
+            <div className="cmt-actions">
+              <button
+                type="button"
+                className="cmt-act"
+                onClick={() => onReply(comment.id, comment.author_email)}
+              >
+                <DI.Chat /> Reply
+              </button>
+              {isOwn && (
+                <>
+                  <button type="button" className="cmt-act" onClick={() => onEdit(comment.id, comment.content)}>
+                    <DI.Pencil /> Edit
+                  </button>
+                  <button type="button" className="cmt-act danger" onClick={() => onDelete(comment.id)}>
+                    <DI.Trash /> Delete
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {(comment.replies ?? []).map(r => (
         <CommentItem
           key={r.id}
@@ -74,6 +101,11 @@ function CommentItem({
           onReply={onReply}
           onDelete={onDelete}
           onEdit={onEdit}
+          editingId={editingId}
+          editText={editText}
+          onEditTextChange={onEditTextChange}
+          onEditSave={onEditSave}
+          onEditCancel={onEditCancel}
         />
       ))}
     </div>
@@ -227,31 +259,20 @@ export function CommentsSection({ ideaId, currentUserId }: Props) {
       ) : (
         <div className="cmt-list">
           {comments.map(c => (
-            editingId === c.id ? (
-              <div key={c.id} className="cmt-edit-wrap dash-card">
-                <textarea
-                  className="cmt-input"
-                  rows={3}
-                  value={editText}
-                  onChange={e => setEditText(e.target.value)}
-                  autoFocus
-                />
-                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                  <button type="button" className="btn-sm solid" onClick={() => void handleEditSave(c.id)}>Save</button>
-                  <button type="button" className="btn-sm ghost" onClick={() => { setEditingId(null); setEditText('') }}>Cancel</button>
-                </div>
-              </div>
-            ) : (
-              <CommentItem
-                key={c.id}
-                comment={c}
-                depth={0}
-                currentUserId={currentUserId}
-                onReply={startReply}
-                onDelete={handleDelete}
-                onEdit={startEdit}
-              />
-            )
+            <CommentItem
+              key={c.id}
+              comment={c}
+              depth={0}
+              currentUserId={currentUserId}
+              onReply={startReply}
+              onDelete={handleDelete}
+              onEdit={startEdit}
+              editingId={editingId}
+              editText={editText}
+              onEditTextChange={setEditText}
+              onEditSave={id => void handleEditSave(id)}
+              onEditCancel={() => { setEditingId(null); setEditText('') }}
+            />
           ))}
         </div>
       )}

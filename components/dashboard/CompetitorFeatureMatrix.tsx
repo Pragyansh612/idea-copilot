@@ -49,11 +49,11 @@ export function CompetitorFeatureMatrix({ matrix, loading }: Props) {
               {col.label}
             </div>
           ))}
-          {matrix.rows.map(row => {
+          {matrix.rows.map((row, rowIndex) => {
             const isDiff = matrix.differentiators.includes(row)
             const isGap = matrix.gaps.includes(row)
             return (
-              <Fragment key={row}>
+              <Fragment key={`${row}-${rowIndex}`}>
                 <div
                   className={`fm-cell row-head ${isDiff ? 'fm-diff' : isGap ? 'fm-gap' : ''}`}
                 >
@@ -62,7 +62,7 @@ export function CompetitorFeatureMatrix({ matrix, loading }: Props) {
                 {matrix.columns.map(col => {
                   const has = Boolean(matrix.cells[row]?.[col.id])
                   return (
-                    <div key={`${row}-${col.id}`} className="fm-cell">
+                    <div key={`${row}-${rowIndex}-${col.id}`} className="fm-cell">
                       {has ? <span className="y" aria-label="yes">✓</span> : <span className="n" aria-label="no">✕</span>}
                     </div>
                   )
