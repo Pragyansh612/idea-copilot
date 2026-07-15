@@ -1,10 +1,9 @@
 'use client'
 import { Suspense, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { AuthAPI } from '@/lib/api/auth'
-import { clearSession } from '@/lib/auth/session'
-import { syncAuthCookies } from '@/lib/auth/sync-cookies'
+import { clearSession, enterAuthenticatedApp } from '@/lib/auth/session'
 import { TokenManager } from '@/lib/auth/tokens'
 import { routes } from '@/lib/routes'
 
@@ -46,9 +45,12 @@ export default function SignupPage() {
 }
 
 function SignupForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect')
+  const redirectParam = searchParams.get('redirect')
+  const redirectTo =
+    redirectParam && redirectParam.startsWith('/')
+      ? redirectParam
+      : routes.newIdea
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
@@ -58,24 +60,31 @@ function SignupForm() {
 
   useEffect(() => {
     let cancelled = false
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setIsCheckingAuth(false)
+    }, 4000)
+
     async function checkExistingSession() {
       const token = TokenManager.getAccessToken()
       if (!token) {
-        await clearSession()
         if (!cancelled) setIsCheckingAuth(false)
         return
       }
       try {
         await AuthAPI.getMe()
-        if (!cancelled) router.replace(redirectTo || routes.dashboard)
+        if (cancelled) return
+        await enterAuthenticatedApp(redirectTo)
       } catch {
         await clearSession()
         if (!cancelled) setIsCheckingAuth(false)
       }
     }
-    checkExistingSession()
-    return () => { cancelled = true }
-  }, [router])
+    void checkExistingSession()
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [redirectTo])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -92,18 +101,16 @@ function SignupForm() {
       const refresh_token = response?.data?.session?.refresh_token
 
       if (!access_token || !refresh_token) {
-        router.push(`${routes.login}?message=${encodeURIComponent('Account created. Check your email to confirm, then sign in.')}`)
+        window.location.href = `${routes.login}?message=${encodeURIComponent('Account created. Check your email to confirm, then sign in.')}`
         return
       }
 
       TokenManager.setTokens(access_token, refresh_token)
+      const { syncAuthCookies } = await import('@/lib/auth/sync-cookies')
       await syncAuthCookies(access_token, refresh_token)
-
-      await new Promise(resolve => setTimeout(resolve, 150))
-      window.location.href = redirectTo || routes.newIdea
+      window.location.assign(redirectTo)
     } catch (error) {
       setErr(error instanceof Error ? error.message : 'Signup failed. Please try again.')
-    } finally {
       setIsLoading(false)
     }
   }

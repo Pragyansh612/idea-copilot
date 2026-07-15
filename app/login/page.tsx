@@ -1,9 +1,8 @@
 'use client'
 import { Suspense, useState, useEffect } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { useSearchParams } from 'next/navigation'
 import { AuthAPI } from '@/lib/api/auth'
-import { clearSession } from '@/lib/auth/session'
-import { syncAuthCookies } from '@/lib/auth/sync-cookies'
+import { clearSession, enterAuthenticatedApp } from '@/lib/auth/session'
 import { TokenManager } from '@/lib/auth/tokens'
 import { routes } from '@/lib/routes'
 import Link from 'next/link'
@@ -48,10 +47,9 @@ export default function LoginPage() {
 }
 
 function LoginForm() {
-  const router = useRouter()
   const searchParams = useSearchParams()
   const redirectParam = searchParams.get('redirect')
-  const redirectTo = redirectParam || '/dashboard'
+  const redirectTo = redirectParam && redirectParam.startsWith('/') ? redirectParam : '/dashboard'
   const signupHref = redirectParam
     ? `${routes.signup}?redirect=${encodeURIComponent(redirectParam)}`
     : routes.signup
@@ -69,24 +67,32 @@ function LoginForm() {
 
   useEffect(() => {
     let cancelled = false
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setIsCheckingAuth(false)
+    }, 4000)
+
     async function checkExistingSession() {
       const token = TokenManager.getAccessToken()
       if (!token) {
-        await clearSession()
         if (!cancelled) setIsCheckingAuth(false)
         return
       }
       try {
         await AuthAPI.getMe()
-        if (!cancelled) router.replace(redirectTo)
+        if (cancelled) return
+        await enterAuthenticatedApp(redirectTo)
+        // Stay on Loading while hard navigation happens
       } catch {
         await clearSession()
         if (!cancelled) setIsCheckingAuth(false)
       }
     }
-    checkExistingSession()
-    return () => { cancelled = true }
-  }, [router, redirectTo])
+    void checkExistingSession()
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+    }
+  }, [redirectTo])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -103,13 +109,11 @@ function LoginForm() {
       }
 
       TokenManager.setTokens(access_token, refresh_token)
+      const { syncAuthCookies } = await import('@/lib/auth/sync-cookies')
       await syncAuthCookies(access_token, refresh_token)
-
-      await new Promise(resolve => setTimeout(resolve, 150))
-      window.location.href = redirectTo
+      window.location.assign(redirectTo)
     } catch (error) {
       setErr(error instanceof Error ? error.message : 'Login failed. Please try again.')
-    } finally {
       setIsLoading(false)
     }
   }

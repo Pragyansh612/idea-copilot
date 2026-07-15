@@ -28,7 +28,7 @@ export default function CloseSection() {
             already building it, where the opening is, and the exact next thing to do.
           </p>
           <div className="close2-actions">
-            <Link className="btn btn-primary" href={routes.dashboard}>
+            <Link className="btn btn-primary" href={routes.login}>
               Open the workspace <IconArrow />
             </Link>
             <div className="close2-price">

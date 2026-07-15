@@ -88,9 +88,16 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   }, [])
 
   useEffect(() => {
-    if (!TokenManager.isAuthenticated()) {
-      void redirectToLogin(pathname)
+    // Keep cookies in sync with localStorage so proxy keeps allowing /dashboard.
+    async function guard() {
+      if (TokenManager.isAuthenticated()) {
+        const { ensureAuthCookies } = await import('@/lib/auth/session')
+        await ensureAuthCookies()
+        return
+      }
+      await redirectToLogin(pathname)
     }
+    void guard()
   }, [pathname])
 
   useEffect(() => {

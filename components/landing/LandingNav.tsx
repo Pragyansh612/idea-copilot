@@ -24,7 +24,7 @@ export default function LandingNav() {
       </div>
       <span className="nav-sep" />
       <ThemeToggle />
-      <Link className="nav-cta" href={routes.dashboard}>
+      <Link className="nav-cta" href={routes.login}>
         Open the workspace
       </Link>
     </nav>
