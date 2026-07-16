@@ -15,15 +15,35 @@ type Props = {
   ideaId: string
   confidence?: ConfidenceLevel
   confidenceReason?: string
+  nextAction?: string
   onDiscoverCompetitors?: () => void
 }
 
-export function MarketGapResults({ gaps, ideaId, confidence, confidenceReason, onDiscoverCompetitors }: Props) {
+const IMPACT_TAG_CLASS: Record<'high' | 'medium' | 'low', string> = {
+  high: 'good',
+  medium: 'warn',
+  low: '',
+}
+
+export function MarketGapResults({ gaps, ideaId, confidence, confidenceReason, nextAction, onDiscoverCompetitors }: Props) {
   const router = useRouter()
   if (gaps.length === 0) return null
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
+      {nextAction && (
+        <div className="dash-card gap-next-action">
+          <div className="eyebrow-mono gap-next-action-eyebrow">What to do next</div>
+          <p className="gap-next-action-text">{nextAction}</p>
+          <button
+            type="button"
+            className="btn-sm solid"
+            onClick={() => router.push(routes.copilotDiscuss(ideaId, `Help me plan this next step: "${nextAction}"`))}
+          >
+            <DI.Spark /> Discuss with Copilot
+          </button>
+        </div>
+      )}
       {confidence === 'low' && (
         <div className="dash-card" style={{ borderColor: 'color-mix(in srgb, var(--warn) 40%, var(--line))' }}>
           <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
@@ -79,7 +99,7 @@ export function MarketGapResults({ gaps, ideaId, confidence, confidenceReason, o
           <div key={`${title}-${i}`} className="dash-card">
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
               <div className="eyebrow-mono">#{String(i + 1).padStart(2, '0')}</div>
-              <span className={`i-tag ${impact === 'high' ? 'hot' : impact === 'low' ? '' : 'accent'}`}>impact · {impact}</span>
+              <span className={`i-tag ${IMPACT_TAG_CLASS[impact]}`}>opportunity · {impact}</span>
             </div>
             <h3 style={{ marginBottom: 8 }}>{title}</h3>
             <p style={{ color: 'var(--fg-2)', fontSize: 14, lineHeight: 1.55, marginBottom: g.evidence ? 8 : 10 }}>

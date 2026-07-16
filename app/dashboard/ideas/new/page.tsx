@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { IdeaAPI, type PriorityEnum } from '@/lib/api/idea'
 import { ChatImportModal } from '@/components/dashboard/ChatImportModal'
 import { draftFromForm, saveIdeaDraft } from '@/lib/copilot/idea-draft'
+import { invalidateCached } from '@/lib/dashboard/query-cache'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
@@ -46,6 +47,8 @@ export default function NewIdeaPage() {
         priority,
         tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       })
+      invalidateCached('ideas:list')
+      invalidateCached('dashboard:home')
       router.push(`${routes.idea(idea.id)}?created=1`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create idea')

@@ -8,6 +8,7 @@ import { MarketPositionMap } from '@/components/dashboard/MarketPositionMap'
 import { StrategicInsightsCard } from '@/components/dashboard/StrategicInsightsCard'
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import { Toast } from '@/components/dashboard/Toast'
+import { captureError } from '@/lib/monitoring'
 import * as DI from '@/components/dashboard/Icons'
 import {
   CompetitorAPI,
@@ -266,6 +267,7 @@ function IntelligenceContent() {
       else if (done.error) setActionError(done.error)
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Competitor discovery failed')
+      captureError(err, { ideaId, flow: 'discover-competitors' })
     } finally {
       setBusyAction(null)
     }
@@ -379,6 +381,7 @@ function IntelligenceContent() {
       })
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Market gap analysis failed')
+      captureError(err, { ideaId: selectedIdeaId, flow: 'market-gap-analysis' })
     } finally {
       setGapAnalyzing(false)
     }
@@ -762,6 +765,7 @@ function IntelligenceContent() {
                         ideaId={selectedIdeaId}
                         confidence={gapResult.confidence}
                         confidenceReason={gapResult.confidence_reason}
+                        nextAction={gapResult.next_action}
                         onDiscoverCompetitors={() => void discoverCompetitors()}
                       />
                     )

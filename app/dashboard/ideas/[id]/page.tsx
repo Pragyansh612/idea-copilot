@@ -32,10 +32,11 @@ import { buildReadinessItems, computeStartupReadinessPercent, signalsFromIdeaDet
 import { ExecutionSection } from '@/components/dashboard/ExecutionSection'
 import { formatDate, ideaScore, priorityShort, statusLabel, timeAgo } from '@/lib/dashboard/format'
 import { useDashboardChrome } from '@/components/dashboard/DashboardChromeContext'
+import { captureError } from '@/lib/monitoring'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
-const VALID_TABS = ['overview', 'roadmap', 'intelligence', 'copilot', 'attachments', 'discussion'] as const
+const VALID_TABS = ['overview', 'intelligence', 'roadmap', 'copilot', 'discussion', 'attachments'] as const
 const SUGGESTION_TYPES: AIGenerateRequest['suggestion_type'][] = ['features', 'phases', 'improvements', 'marketing', 'validation']
 
 export default function IdeaDetailPage() {
@@ -51,7 +52,7 @@ function IdeaDetailContent() {
   const params = useParams()
   const searchParams = useSearchParams()
   const ideaId = params.id as string
-  const [tab, setTab] = useState<'overview' | 'roadmap' | 'intelligence' | 'copilot' | 'attachments' | 'discussion'>('overview')
+  const [tab, setTab] = useState<'overview' | 'intelligence' | 'roadmap' | 'copilot' | 'discussion' | 'attachments'>('overview')
   const [showShare, setShowShare] = useState(false)
   const [currentUserId, setCurrentUserId] = useState<string | undefined>()
   const [idea, setIdea] = useState<Idea | null>(null)
@@ -71,7 +72,8 @@ function IdeaDetailContent() {
   const [newFeaturePriority, setNewFeaturePriority] = useState<Feature['priority']>('medium')
   const [dismissedSuggestionKeys, setDismissedSuggestionKeys] = useState<string[]>([])
   const [suggestionType, setSuggestionType] = useState<AIGenerateRequest['suggestion_type']>('features')
-  const [copilotMessages, setCopilotMessages] = useState<Array<{ role: 'user' | 'ai'; text: string }>>([])
+  const [copilotMessages, setCopilotMessages] = useState<Array<{ role: 'user' | 'ai'; text: string; failed?: boolean }>>([])
+  const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null)
   const [copilotInput, setCopilotInput] = useState('')
   const [attachments, setAttachments] = useState<Attachment[]>([])
   const [marketGapDone, setMarketGapDone] = useState(false)
@@ -478,16 +480,31 @@ function IdeaDetailContent() {
     if (!text) return
     setCopilotInput('')
     setBusyAction('copilot')
+    setLastFailedMessage(null)
     setCopilotMessages(prev => [...prev, { role: 'user', text }])
     try {
       const res = await CopilotAPI.chat({ query: text, idea_id: ideaId })
       setCopilotMessages(prev => [...prev, { role: 'ai', text: res.response }])
     } catch (err) {
-      showError(err instanceof Error ? err.message : 'Copilot request failed')
+      setCopilotMessages(prev =>
+        prev.map((m, i) => (i === prev.length - 1 ? { ...m, failed: true } : m)),
+      )
+      setLastFailedMessage(text)
+      showError(err instanceof Error ? err.message : 'Copilot request failed. Click retry to try again.')
+      captureError(err, { ideaId, flow: 'copilot-chat-inline' })
     } finally {
       setBusyAction(null)
     }
   }
+
+  const handleCopilotRetry = useCallback(() => {
+    if (!lastFailedMessage) return
+    const text = lastFailedMessage
+    setLastFailedMessage(null)
+    setCopilotMessages(prev => prev.slice(0, -1))
+    void sendCopilot(text)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sendCopilot is stable within this component's render
+  }, [lastFailedMessage])
 
   const featuresByPhase = useMemo(() => {
     const byPhase: Record<string, { total: number; done: number; items: Feature[] }> = {}
@@ -597,10 +614,21 @@ function IdeaDetailContent() {
     onDiscoverCompetitors: () => router.push(routes.intelligenceDiscover(ideaId)),
     onRunMarketGap: () => router.push(routes.intelligenceGapAnalysis(ideaId)),
   })
+  const topCompetitorNames = competitors
+    .slice(0, 2)
+    .map(c => String(c.competitor_name || c.name || '').trim())
+    .filter(Boolean)
+  const topGapTitle = gaps[0]?.title
   const copilotPrompts = [
-    `Generate features for ${idea.title}`,
-    `Find market gaps for ${idea.title}`,
-    `What should I build first in ${idea.title}?`,
+    topCompetitorNames.length > 0
+      ? `How does ${idea.title} compare to ${topCompetitorNames.join(' and ')}?`
+      : `Find market gaps for ${idea.title}`,
+    topGapTitle
+      ? `Help me evaluate this opportunity: "${topGapTitle}"`
+      : `Generate features for ${idea.title}`,
+    readinessSignals.hasPhases
+      ? `What should I build next in ${idea.title}?`
+      : `What should I build first in ${idea.title}?`,
   ]
 
   return (
@@ -712,11 +740,11 @@ function IdeaDetailContent() {
           <div className="id-tabs">
             {[
               { id: 'overview', label: 'Overview', count: '' },
-              { id: 'roadmap', label: 'Roadmap', count: String(phases.length) },
               { id: 'intelligence', label: 'Intelligence', count: String(competitors.length) },
+              { id: 'roadmap', label: 'Roadmap', count: String(phases.length) },
               { id: 'copilot', label: 'Copilot', count: '' },
-              { id: 'attachments', label: 'Attachments', count: String(attachments.length) },
               { id: 'discussion', label: 'Discussion', count: '' },
+              { id: 'attachments', label: 'Attachments', count: String(attachments.length) },
             ].map(t => (
               <button
                 key={t.id}
@@ -1303,15 +1331,36 @@ function IdeaDetailContent() {
                 ))}
               </div>
               <div className="cp-stream" style={{ maxHeight: 360, border: '1px solid var(--line)', borderRadius: 10 }}>
-                {copilotMessages.length === 0 ? (
+                {copilotMessages.length === 0 && busyAction !== 'copilot' ? (
                   <p style={{ color: 'var(--fg-2)' }}>No messages yet. Use a prompt above or ask directly.</p>
                 ) : (
                   copilotMessages.map((m, idx) => (
                     <div key={idx} className={`cp-msg ${m.role === 'user' ? 'user' : 'ai'}`}>
                       <div className="av" />
-                      <div className="cp-bubble" style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+                      <div>
+                        <div className="cp-bubble" style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+                        {m.failed && (
+                          <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 12.5, color: 'var(--warn)' }}>Message failed to send.</span>
+                            <button
+                              type="button"
+                              className="btn-sm ghost"
+                              onClick={handleCopilotRetry}
+                              disabled={busyAction === 'copilot'}
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   ))
+                )}
+                {busyAction === 'copilot' && (
+                  <div className="cp-msg ai">
+                    <div className="av" />
+                    <div className="cp-bubble">Thinking…</div>
+                  </div>
                 )}
               </div>
               <div className="cp-input-wrap" style={{ padding: 0, borderTop: 0 }}>

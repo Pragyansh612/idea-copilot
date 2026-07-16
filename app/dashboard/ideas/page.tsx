@@ -8,10 +8,14 @@ import { ChatImportModal } from '@/components/dashboard/ChatImportModal'
 import { ideaScore, matchesStatusFilter, statusBadge, statusLabel, timeAgo } from '@/lib/dashboard/format'
 import { emptySignals, fetchReadinessMapForIdeas, type ReadinessSignals } from '@/lib/dashboard/readiness'
 import { founderBucketFor, type FounderBucket } from '@/lib/dashboard/workspace-intelligence'
+import { getCached, peekStale, setCached } from '@/lib/dashboard/query-cache'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
 const FILTERS = ['All', 'Active', 'Validating', 'Draft', 'Stalled']
+const PAGE_SIZE = 8
+const IDEAS_CACHE_KEY = 'ideas:list'
+const IDEAS_CACHE_TTL_MS = 60_000
 
 const BUCKET_LABELS: Record<FounderBucket, string> = {
   ready: 'Ready to build',
@@ -45,21 +49,38 @@ function MyIdeasContent() {
   const [readinessReady, setReadinessReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showImport, setShowImport] = useState(false)
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
 
-  async function load() {
+  type IdeasSnapshot = {
+    categories: Category[]
+    ideas: Idea[]
+    readinessEntries: [string, ReadinessSignals][]
+  }
+
+  function applySnapshot(snap: IdeasSnapshot) {
+    setCategories(snap.categories)
+    setIdeas(snap.ideas)
+    setReadinessByIdea(new Map(snap.readinessEntries))
+    setReadinessReady(true)
+  }
+
+  async function load(opts?: { soft?: boolean }) {
     try {
-      setLoading(true)
+      if (!opts?.soft) setLoading(true)
       setError(null)
       const [cats, result] = await Promise.all([
         CategoryAPI.getCategories(),
         IdeaAPI.getIdeas({ limit: 100, sort_by: 'updated_at', sort_order: 'desc' }),
       ])
-      setCategories(cats)
-      setIdeas(result.ideas)
-      setReadinessReady(false)
+      if (!opts?.soft) {
+        setCategories(cats)
+        setIdeas(result.ideas)
+        setReadinessReady(false)
+      }
       const snapshots = await fetchReadinessMapForIdeas(result.ideas, { activeOnly: false })
-      setReadinessByIdea(snapshots)
-      setReadinessReady(true)
+      const snap: IdeasSnapshot = { categories: cats, ideas: result.ideas, readinessEntries: [...snapshots.entries()] }
+      applySnapshot(snap)
+      setCached(IDEAS_CACHE_KEY, snap, IDEAS_CACHE_TTL_MS)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ideas')
     } finally {
@@ -68,8 +89,20 @@ function MyIdeasContent() {
   }
 
   useEffect(() => {
-    load()
+    const fresh = getCached<IdeasSnapshot>(IDEAS_CACHE_KEY)
+    const stale = fresh ?? peekStale<IdeasSnapshot>(IDEAS_CACHE_KEY)
+    if (stale) {
+      applySnapshot(stale)
+      setLoading(false)
+      void load({ soft: true })
+    } else {
+      void load()
+    }
   }, [])
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE)
+  }, [filter, cat, bucket])
 
   const categoryOptions = [
     { id: 'all', name: 'All categories' },
@@ -87,6 +120,8 @@ function MyIdeasContent() {
       return true
     })
   }, [ideas, cat, filter, bucket, readinessByIdea, readinessReady])
+
+  const visibleList = useMemo(() => list.slice(0, visibleCount), [list, visibleCount])
 
   return (
     <div className="page">
@@ -180,8 +215,9 @@ function MyIdeasContent() {
           }
         />
       ) : view === 'grid' ? (
+        <>
         <div className="ideas-grid">
-          {list.map(i => {
+          {visibleList.map(i => {
             const badge = statusBadge(i.status)
             const score = ideaScore(i)
             const signals = readinessByIdea.get(i.id) ?? emptySignals()
@@ -209,6 +245,14 @@ function MyIdeasContent() {
             )
           })}
         </div>
+        {visibleCount < list.length && (
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 16 }}>
+            <button type="button" className="btn-sm ghost" onClick={() => setVisibleCount(c => c + PAGE_SIZE)}>
+              Show {Math.min(PAGE_SIZE, list.length - visibleCount)} more
+            </button>
+          </div>
+        )}
+        </>
       ) : (
         <div className="dash-card" style={{ padding: 0 }}>
           <div className="ci-table">
@@ -216,7 +260,7 @@ function MyIdeasContent() {
               <span/><span>Idea</span><span>Status</span><span>Readiness</span>
               <span style={{ textAlign: 'right' }}>Score</span>
             </div>
-            {list.map(i => {
+            {visibleList.map(i => {
               const signals = readinessByIdea.get(i.id) ?? emptySignals()
               return (
                 <div key={i.id} className="ci-row" onClick={() => router.push(routes.idea(i.id))}>
@@ -231,6 +275,13 @@ function MyIdeasContent() {
               )
             })}
           </div>
+          {visibleCount < list.length && (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 14 }}>
+              <button type="button" className="btn-sm ghost" onClick={() => setVisibleCount(c => c + PAGE_SIZE)}>
+                Show {Math.min(PAGE_SIZE, list.length - visibleCount)} more
+              </button>
+            </div>
+          )}
         </div>
       )}
       </>

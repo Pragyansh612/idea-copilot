@@ -30,6 +30,7 @@ import {
 } from '@/lib/copilot/opinionated-copilot'
 import { PageError, PageLoading } from '@/components/dashboard/PageState'
 import { timeAgo } from '@/lib/dashboard/format'
+import { captureError } from '@/lib/monitoring'
 import { routes } from '@/lib/routes'
 import * as DI from '@/components/dashboard/Icons'
 
@@ -244,6 +245,7 @@ function CopilotPageInner() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Copilot request failed')
       setMessages(prev => prev.map(m => (m.id === userMsg.id ? { ...m, failed: true } : m)))
+      captureError(err, { ideaId: selectedIdeaId, flow: 'copilot-chat' })
     } finally {
       setSending(false)
     }
