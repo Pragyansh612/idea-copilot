@@ -561,7 +561,11 @@ export class IdeaAPI {
     const result = await fetchWithAuth(`${API_URL}/api/ideas/${ideaId}/competitor-analysis`, {
       method: 'POST',
     });
-    return result.data;
+    // A 200 response can still carry `{ success: false, message }` (e.g. analysis_failed) with no `data` key.
+    if (result.success === false) {
+      throw new Error(result.message || 'Competitor analysis failed');
+    }
+    return result.data.analysis;
   }
 }
 
