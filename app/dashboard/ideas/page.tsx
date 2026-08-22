@@ -147,7 +147,7 @@ function MyIdeasContent() {
       {showImport && (
         <ChatImportModal
           onClose={() => setShowImport(false)}
-          onDone={() => { setShowImport(false); load() }}
+          onDone={() => { load() }}
         />
       )}
 

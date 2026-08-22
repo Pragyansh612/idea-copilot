@@ -96,6 +96,10 @@ function IdeaDetailContent() {
   const [descriptionDraft, setDescriptionDraft] = useState('')
   const [editingTargetMarket, setEditingTargetMarket] = useState(false)
   const [targetMarketDraft, setTargetMarketDraft] = useState('')
+  const [editingScores, setEditingScores] = useState(false)
+  const [effortDraft, setEffortDraft] = useState('')
+  const [impactDraft, setImpactDraft] = useState('')
+  const [interestDraft, setInterestDraft] = useState('')
   const phaseNameRef = useRef<HTMLInputElement>(null)
   const welcomedRef = useRef(false)
   const { setIdeaDetailTitle } = useDashboardChrome()
@@ -475,6 +479,32 @@ function IdeaDetailContent() {
     }
   }
 
+  async function saveScores() {
+    const effort = Number(effortDraft)
+    const impact = Number(impactDraft)
+    const interest = Number(interestDraft)
+    const inRange = (n: number) => Number.isInteger(n) && n >= 1 && n <= 10
+    if (!inRange(effort) || !inRange(impact) || !inRange(interest)) {
+      showError('Effort, impact, and interest must each be a whole number from 1 to 10.')
+      return
+    }
+    try {
+      setBusyAction('scores')
+      const updated = await IdeaAPI.updateIdea(ideaId, {
+        effort_score: effort,
+        impact_score: impact,
+        interest_score: interest,
+      })
+      setIdea(updated)
+      setEditingScores(false)
+      showSuccess('Scores saved.')
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Failed to save scores')
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   async function sendCopilot(message?: string) {
     const text = (message ?? copilotInput).trim()
     if (!text) return
@@ -787,20 +817,80 @@ function IdeaDetailContent() {
                 </div>
                 )}
                 <div className="dash-card" style={{ padding: 12 }}>
-                  <div className="eyebrow-mono" style={{ marginBottom: 8 }}>Scores</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8 }}>
-                    {[
-                      ['Effort', idea.effort_score ?? '—'],
-                      ['Impact', idea.impact_score ?? '—'],
-                      ['Interest', idea.interest_score ?? '—'],
-                      ['Overall', idea.overall_score ?? score],
-                    ].map(([k, v]) => (
-                      <div key={String(k)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
-                        <div className="eyebrow-mono">{k}</div>
-                        <div style={{ marginTop: 4, fontSize: 16, fontWeight: 500 }}>{String(v)}</div>
-                      </div>
-                    ))}
+                  <div style={{ marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div className="eyebrow-mono">Scores</div>
+                    {!editingScores && (
+                      <button
+                        type="button"
+                        className="btn-sm ghost"
+                        onClick={() => {
+                          setEffortDraft(idea.effort_score != null ? String(idea.effort_score) : '')
+                          setImpactDraft(idea.impact_score != null ? String(idea.impact_score) : '')
+                          setInterestDraft(idea.interest_score != null ? String(idea.interest_score) : '')
+                          setEditingScores(true)
+                        }}
+                      >
+                        Edit
+                      </button>
+                    )}
                   </div>
+                  {editingScores ? (
+                    <div style={{ display: 'grid', gap: 10 }}>
+                      <p style={{ margin: 0, fontSize: 12, color: 'var(--fg-3)' }}>
+                        Rate 1–10. Overall is computed automatically as (impact + interest) / effort.
+                      </p>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0,1fr))', gap: 8 }}>
+                        {([
+                          ['Effort', effortDraft, setEffortDraft],
+                          ['Impact', impactDraft, setImpactDraft],
+                          ['Interest', interestDraft, setInterestDraft],
+                        ] as const).map(([label, val, setVal]) => (
+                          <label key={label} style={{ display: 'grid', gap: 4 }}>
+                            <span className="eyebrow-mono">{label}</span>
+                            <input
+                              type="number"
+                              min={1}
+                              max={10}
+                              step={1}
+                              value={val}
+                              onChange={e => setVal(e.target.value)}
+                              style={{
+                                padding: '8px 10px',
+                                borderRadius: 8,
+                                border: '1px solid var(--line-2)',
+                                background: 'var(--bg-2)',
+                                color: 'var(--fg)',
+                                font: 'inherit',
+                                fontSize: 14,
+                              }}
+                            />
+                          </label>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button type="button" className="btn-sm solid" onClick={() => void saveScores()} disabled={busyAction === 'scores'}>
+                          {busyAction === 'scores' ? 'Saving…' : 'Save scores'}
+                        </button>
+                        <button type="button" className="btn-sm ghost" onClick={() => setEditingScores(false)} disabled={busyAction === 'scores'}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0,1fr))', gap: 8 }}>
+                      {[
+                        ['Effort', idea.effort_score ?? '—'],
+                        ['Impact', idea.impact_score ?? '—'],
+                        ['Interest', idea.interest_score ?? '—'],
+                        ['Overall', idea.overall_score ?? score],
+                      ].map(([k, v]) => (
+                        <div key={String(k)} style={{ border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px' }}>
+                          <div className="eyebrow-mono">{k}</div>
+                          <div style={{ marginTop: 4, fontSize: 16, fontWeight: 500 }}>{String(v)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="dash-card" style={{ padding: 12 }} id="readiness-checklist">
                   <div className="readiness-overview-row">

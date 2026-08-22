@@ -63,8 +63,8 @@ export default function NewIdeaPage() {
         <ChatImportModal
           onClose={() => setShowImport(false)}
           onDone={() => {
-            setShowImport(false)
-            router.push(routes.ideas)
+            invalidateCached('ideas:list')
+            invalidateCached('dashboard:home')
           }}
         />
       )}

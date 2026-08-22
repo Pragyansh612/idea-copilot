@@ -169,7 +169,7 @@ export function expandSuggestions(
             suggestionId: s.id,
             suggestionType: s.suggestion_type || itemType,
             title: looksJson ? `${itemType} suggestions` : text.slice(0, 72),
-            body: looksJson ? 'Open the raw payload failed to parse. Try generating again.' : text,
+            body: looksJson ? "This suggestion didn't come back in a valid format. Generate again to retry." : text,
             itemType,
           },
         ]
