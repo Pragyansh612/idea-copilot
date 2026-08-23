@@ -274,6 +274,14 @@ export function isCompetitorAnalyzed(c: CompetitorRow): boolean {
 export function computeWorkspaceStats(
   competitorsByIdea: Record<string, CompetitorRow[]>,
   featureCountByCompetitor: Record<string, number>,
+  /**
+   * Real gap-opportunity count fetched from the server for the ideas in
+   * scope. Falls back to the localStorage cache (same-device-only, and only
+   * a same-session-completeness guarantee — see countStoredGapOpportunities)
+   * when the caller hasn't fetched server data, but callers that can should
+   * always pass this rather than rely on the fallback.
+   */
+  marketGapsFound?: number,
 ): WorkspaceCompetitorStats {
   const all = Object.values(competitorsByIdea).flat()
   const analyzed = all.filter(isCompetitorAnalyzed).length
@@ -282,7 +290,7 @@ export function computeWorkspaceStats(
     tracked: all.length,
     analyzed,
     featuresExtracted,
-    marketGapsFound: countStoredGapOpportunities(),
+    marketGapsFound: marketGapsFound ?? countStoredGapOpportunities(),
   }
 }
 

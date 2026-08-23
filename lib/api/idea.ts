@@ -550,6 +550,17 @@ export class IdeaAPI {
     return result.data.gaps;
   }
 
+  /** Fetches the most recent persisted market gap analysis (server truth — not the localStorage cache). */
+  static async getMarketGapAnalysis(ideaId: string): Promise<{ gaps: unknown; analyzedAt: string | null }> {
+    const result = await fetchWithAuth(`${API_URL}/api/ideas/${ideaId}/market-gap-analysis`, {
+      method: 'GET',
+    });
+    return {
+      gaps: result.data.gaps ?? null,
+      analyzedAt: (result.data.analyzed_at as string | undefined) ?? null,
+    };
+  }
+
   static async discoverCompetitors(ideaId: string): Promise<DiscoverCompetitorsResult> {
     const result = await fetchWithAuth(`${API_URL}/api/ideas/${ideaId}/discover-competitors`, {
       method: 'POST',

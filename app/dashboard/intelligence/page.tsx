@@ -100,6 +100,7 @@ function IntelligenceContent() {
   const loadWorkspaceAggregates = useCallback(async (ideaList: Idea[]) => {
     const byIdea: Record<string, CompetitorRow[]> = {}
     const featCounts: Record<string, number> = {}
+    let marketGapsFound = 0
     await Promise.all(
       ideaList.map(async idea => {
         try {
@@ -121,11 +122,20 @@ function IntelligenceContent() {
         } catch {
           byIdea[idea.id] = []
         }
+        // Server truth for gap count, not the localStorage cache — a founder
+        // switching devices/browsers shouldn't see this drop to 0 for gaps
+        // that genuinely exist on the server. See PRODUCT_AUDIT fixes.
+        try {
+          const serverGap = await IdeaAPI.getMarketGapAnalysis(idea.id)
+          if (serverGap.gaps) marketGapsFound += normalizeGapResult(serverGap.gaps).items.length
+        } catch {
+          /* leave this idea's contribution at 0 rather than fail the whole aggregate */
+        }
       }),
     )
     setCompetitorsByIdea(byIdea)
     setFeatureCountByCompetitor(featCounts)
-    setWorkspaceStats(computeWorkspaceStats(byIdea, featCounts))
+    setWorkspaceStats(computeWorkspaceStats(byIdea, featCounts, marketGapsFound))
   }, [])
 
   const loadIdeas = useCallback(async () => {
@@ -157,9 +167,16 @@ function IntelligenceContent() {
     try {
       setIdeaDataLoading(true)
       setMatrixLoading(true)
-      const [detail, compData] = await Promise.all([
+      const [detail, compData, serverGap] = await Promise.all([
         IdeaAPI.getIdea(ideaId),
         CompetitorAPI.getCompetitorResearch(ideaId),
+        // Server truth for "has market gap analysis run" — the localStorage
+        // cache below is a same-device-only optimistic prefill and a fallback
+        // for the rare case a past run's persist step failed; it must never
+        // be the only source, or switching devices/browsers (or just clearing
+        // site data) makes real analysis on the server look like it never
+        // happened, silently undercounting Startup Readiness too.
+        IdeaAPI.getMarketGapAnalysis(ideaId).catch(() => ({ gaps: null, analyzedAt: null })),
       ])
       if (ac.signal.aborted) return
       const rows = dedupeCompetitorsByUrl(
@@ -168,7 +185,13 @@ function IntelligenceContent() {
       setYourFeatures(detail.features || [])
       setCompetitors(rows)
       setCompetitorPage(0)
-      setGapResult(loadGapResultForIdea(ideaId))
+      if (serverGap.gaps) {
+        const normalized = normalizeGapResult(serverGap.gaps)
+        setGapResult(normalized)
+        saveGapsForIdea(ideaId, normalized)
+      } else {
+        setGapResult(loadGapResultForIdea(ideaId))
+      }
 
       const featMap: Record<string, CompetitorFeature[]> = {}
       await Promise.all(
@@ -197,7 +220,11 @@ function IntelligenceContent() {
         const merged = { ...prevCounts, ...counts }
         setCompetitorsByIdea(prev => {
           const next = { ...prev, [ideaId]: rows }
-          setWorkspaceStats(computeWorkspaceStats(next, merged))
+          // Only recomputes competitor-derived stats for this one idea's
+          // merge — leaves marketGapsFound as whatever loadWorkspaceAggregates
+          // last computed from the server rather than falling back to the
+          // (same-device-only) localStorage count and regressing it.
+          setWorkspaceStats(prevStats => computeWorkspaceStats(next, merged, prevStats.marketGapsFound))
           return next
         })
         return merged

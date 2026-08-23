@@ -69,20 +69,28 @@ export function signalsFromIdeaDetail(input: {
   phaseCount: number
   competitorCount: number
   ideaId: string
+  hasMarketGapOnServer?: boolean
 }): ReadinessSignals {
   return {
     hasDescription: Boolean(input.description?.trim()),
     hasFeatures: input.featureCount > 0,
     hasPhases: input.phaseCount > 0,
     hasCompetitors: input.competitorCount > 0,
-    hasMarketGap: hasGapRun(input.ideaId) || loadGapsForIdea(input.ideaId).length > 0,
+    // The localStorage check is same-device-only and a fallback for the rare
+    // case a past run's server-side persist step failed — it must never be
+    // the *only* signal, or Startup Readiness silently undercounts "market
+    // validated" for anyone who ran the analysis on a different device/
+    // browser, or after clearing site data. See PRODUCT_AUDIT fixes.
+    hasMarketGap:
+      Boolean(input.hasMarketGapOnServer) || hasGapRun(input.ideaId) || loadGapsForIdea(input.ideaId).length > 0,
   }
 }
 
 export async function fetchIdeaReadinessSignals(ideaId: string): Promise<ReadinessSignals> {
-  const [detail, comp] = await Promise.all([
+  const [detail, comp, serverGap] = await Promise.all([
     IdeaAPI.getIdea(ideaId),
     CompetitorAPI.getCompetitorResearch(ideaId).catch(() => ({ research: [] as unknown[], competitors: [] as unknown[] })),
+    IdeaAPI.getMarketGapAnalysis(ideaId).catch(() => ({ gaps: null, analyzedAt: null })),
   ])
   const competitors = (comp.research || comp.competitors || []) as unknown[]
   return signalsFromIdeaDetail({
@@ -91,6 +99,7 @@ export async function fetchIdeaReadinessSignals(ideaId: string): Promise<Readine
     phaseCount: detail.phases?.length ?? 0,
     competitorCount: competitors.length,
     ideaId,
+    hasMarketGapOnServer: Boolean(serverGap.gaps),
   })
 }
 
