@@ -105,6 +105,88 @@ function normFeatureName(name: string): string {
   return name.trim().toLowerCase()
 }
 
+const FEATURE_TOKEN_STOPWORDS = new Set([
+  'a', 'an', 'and', 'or', 'the', 'for', 'with', 'to', 'of', 'in', 'on', 'at', 'by', 'via',
+  'from', 'your', 'you', 'our', 'their', 'its', 'is', 'are', 'be', 'as', 'into', 'that',
+  'this', 'core', 'functionality', 'feature', 'features', 'support', 'supports',
+])
+
+/** Strip a leading "[Category]" tag some Gemini-generated feature names carry. */
+function stripFeatureCategoryPrefix(name: string): string {
+  return name.replace(/^\[[^\]]*\]\s*/, '')
+}
+
+function featureTokens(name: string): Set<string> {
+  const words = stripFeatureCategoryPrefix(name)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .filter(w => !FEATURE_TOKEN_STOPWORDS.has(w))
+    .map(w => (w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w))
+  return new Set(words)
+}
+
+function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
+  if (a.size === 0 || b.size === 0) return 0
+  let intersection = 0
+  for (const x of a) if (b.has(x)) intersection += 1
+  const union = a.size + b.size - intersection
+  return union === 0 ? 0 : intersection / union
+}
+
+const FEATURE_CLUSTER_THRESHOLD = 0.4
+
+/**
+ * Cluster semantically-similar feature names (e.g. "Real-time Transcription"
+ * and "[Core Functionality] Live Meeting Transcription") into a single
+ * canonical label. Each competitor's features are independently generated
+ * free text by Gemini, so exact-string matching (the previous approach)
+ * almost never lines up two competitors that both offer the same
+ * capability — see PRODUCT_AUDIT_2026-08-22.md §1b item 1.
+ *
+ * Returns a map from normalized feature name -> canonical display label.
+ */
+function clusterFeatureNames(names: string[]): Map<string, string> {
+  const firstSeenDisplay = new Map<string, string>()
+  for (const n of names) {
+    const norm = normFeatureName(n)
+    if (!firstSeenDisplay.has(norm)) firstSeenDisplay.set(norm, n)
+  }
+
+  type Cluster = { canonicalLabel: string; tokens: Set<string> }
+  const clusters: Cluster[] = []
+  const normToCluster = new Map<string, Cluster>()
+
+  for (const [norm, display] of firstSeenDisplay) {
+    const tokens = featureTokens(display)
+    let best: Cluster | null = null
+    let bestScore = 0
+    for (const cluster of clusters) {
+      const score = jaccardSimilarity(tokens, cluster.tokens)
+      if (score >= FEATURE_CLUSTER_THRESHOLD && score > bestScore) {
+        best = cluster
+        bestScore = score
+      }
+    }
+    if (best) {
+      for (const t of tokens) best.tokens.add(t)
+      if (display.length < best.canonicalLabel.length) best.canonicalLabel = display
+      normToCluster.set(norm, best)
+    } else {
+      const cluster: Cluster = { canonicalLabel: display, tokens }
+      clusters.push(cluster)
+      normToCluster.set(norm, cluster)
+    }
+  }
+
+  const result = new Map<string, string>()
+  for (const norm of firstSeenDisplay.keys()) {
+    result.set(norm, normToCluster.get(norm)!.canonicalLabel)
+  }
+  return result
+}
+
 export function competitorDisplayName(c: CompetitorRow, idx = 0): string {
   return String(c.competitor_name || c.name || `Competitor ${idx + 1}`)
 }
@@ -199,7 +281,6 @@ export function buildFeatureMatrix(
   competitors: CompetitorRow[],
   featuresByCompetitor: Record<string, CompetitorFeature[]>,
 ): FeatureMatrix {
-  const youNames = new Set(yourFeatures.map(f => normFeatureName(f.title)))
   const columns: FeatureMatrix['columns'] = [
     { id: 'you', label: 'You', isYou: true },
     ...competitors.map((c, idx) => ({
@@ -208,30 +289,28 @@ export function buildFeatureMatrix(
     })),
   ]
 
-  const nameMap = new Map<string, string>()
-  for (const f of yourFeatures) {
-    const k = normFeatureName(f.title)
-    if (!nameMap.has(k)) nameMap.set(k, f.title)
-  }
-  competitors.forEach((comp, idx) => {
-    const cid = competitorId(comp, idx)
-    for (const cf of featuresByCompetitor[cid] || []) {
-      const k = normFeatureName(cf.feature_name)
-      if (!nameMap.has(k)) nameMap.set(k, cf.feature_name)
-    }
-  })
+  // Cluster every distinct feature name (yours + every competitor's) so that
+  // near-duplicate free-text names — different competitors independently
+  // describing the same capability — land on the same matrix row instead of
+  // each competitor only ever matching itself.
+  const allNames: string[] = [
+    ...yourFeatures.map(f => f.title),
+    ...competitors.flatMap((comp, idx) =>
+      (featuresByCompetitor[competitorId(comp, idx)] || []).map(cf => cf.feature_name),
+    ),
+  ]
+  const canonicalByNorm = clusterFeatureNames(allNames)
+  const canonicalOf = (name: string) => canonicalByNorm.get(normFeatureName(name)) ?? name
 
-  const rows = [...nameMap.values()].sort((a, b) => a.localeCompare(b))
+  const youKeys = new Set(yourFeatures.map(f => canonicalOf(f.title)))
+  const rows = [...new Set(canonicalByNorm.values())].sort((a, b) => a.localeCompare(b))
   const cells: FeatureMatrix['cells'] = {}
 
   for (const row of rows) {
-    const key = normFeatureName(row)
-    cells[row] = { you: youNames.has(key) }
+    cells[row] = { you: youKeys.has(row) }
     competitors.forEach((comp, idx) => {
       const cid = competitorId(comp, idx)
-      const has = (featuresByCompetitor[cid] || []).some(
-        cf => normFeatureName(cf.feature_name) === key,
-      )
+      const has = (featuresByCompetitor[cid] || []).some(cf => canonicalOf(cf.feature_name) === row)
       cells[row][cid] = has
     })
   }
@@ -258,15 +337,36 @@ export function buildPositionMap(
   competitors: CompetitorRow[],
   featuresByCompetitor: Record<string, CompetitorFeature[]>,
 ): PositionPoint[] {
-  const maxCompetitorFeatures = Math.max(
-    1,
-    ...competitors.map((c, idx) => (featuresByCompetitor[competitorId(c, idx)] || []).length),
-  )
+  // Reuse feature-name clustering (see clusterFeatureNames above) so "coverage"
+  // reflects how much of the whole tracked market's distinct feature set each
+  // competitor actually covers, rather than a raw count relative to whichever
+  // competitor happens to have the most features — the old formula produced
+  // identical scores whenever several competitors tied for the max feature
+  // count, and a binary AI-mention check for "innovation" produced identical
+  // scores for anyone with any AI feature at all. See
+  // PRODUCT_AUDIT_2026-08-22.md §1b item 2.
+  const allNames: string[] = [
+    ...yourFeatures.map(f => f.title),
+    ...competitors.flatMap((comp, idx) =>
+      (featuresByCompetitor[competitorId(comp, idx)] || []).map(cf => cf.feature_name),
+    ),
+  ]
+  const canonicalByNorm = clusterFeatureNames(allNames)
+  const canonicalOf = (name: string) => canonicalByNorm.get(normFeatureName(name)) ?? name
+  const totalDistinctFeatures = Math.max(1, new Set(canonicalByNorm.values()).size)
 
-  const youCoverage = Math.min(100, (yourFeatures.length / maxCompetitorFeatures) * 70 + 20)
-  const youInnovation = yourFeatures.some(f => hasAiSignal(`${f.title} ${f.description || ''}`))
-    ? 75
-    : 35
+  const coverageOf = (names: string[]): number => {
+    const distinct = new Set(names.map(canonicalOf))
+    return Math.min(100, Math.round((distinct.size / totalDistinctFeatures) * 85 + 10))
+  }
+  const innovationOf = (texts: string[]): number => {
+    if (texts.length === 0) return 30
+    const aiCount = texts.filter(hasAiSignal).length
+    return Math.round(25 + (aiCount / texts.length) * 70)
+  }
+
+  const youCoverage = coverageOf(yourFeatures.map(f => f.title))
+  const youInnovation = innovationOf(yourFeatures.map(f => `${f.title} ${f.description || ''}`))
 
   const points: PositionPoint[] = [
     { id: 'you', label: 'You', x: youCoverage, y: youInnovation, isYou: true },
@@ -275,10 +375,8 @@ export function buildPositionMap(
   competitors.forEach((c, idx) => {
     const cid = competitorId(c, idx)
     const feats = featuresByCompetitor[cid] || []
-    const coverage = Math.min(100, (feats.length / maxCompetitorFeatures) * 70 + 15)
-    const innovation = feats.some(f => hasAiSignal(`${f.feature_name} ${f.description || ''}`))
-      ? 72
-      : 28 + (idx % 3) * 8
+    const coverage = coverageOf(feats.map(f => f.feature_name))
+    const innovation = innovationOf(feats.map(f => `${f.feature_name} ${f.description || ''}`))
     points.push({
       id: cid,
       label: competitorDisplayName(c, idx).slice(0, 14),

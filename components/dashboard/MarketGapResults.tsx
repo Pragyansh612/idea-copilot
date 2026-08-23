@@ -10,6 +10,47 @@ function impactFromGap(gap: GapItem): 'high' | 'medium' | 'low' {
   return 'medium'
 }
 
+type OpportunityPoint = { x: number; y: number; text: string }
+type OpportunityLabel = { x: number; y: number; text: string }
+
+/**
+ * Place chart labels avoiding overlap with previously-placed labels by
+ * trying a small set of vertical "lanes" above/below each point, instead of
+ * always rendering at a fixed offset (which smashed together as soon as two
+ * points were close on the x-axis — see PRODUCT_AUDIT_2026-08-22.md §1b
+ * item 3). Not a full force-directed layout, but bounded and deterministic.
+ */
+function layoutOpportunityLabels(points: OpportunityPoint[]): OpportunityLabel[] {
+  const CHAR_WIDTH = 5.3
+  const LABEL_HEIGHT = 11
+  const LANES = [-8, 15, -24, 32, -40, 48]
+  const placed: { left: number; right: number; top: number; bottom: number }[] = []
+
+  const overlaps = (box: { left: number; right: number; top: number; bottom: number }) =>
+    placed.some(
+      p => box.left < p.right + 4 && box.right > p.left - 4 && box.top < p.bottom + 2 && box.bottom > p.top - 2,
+    )
+
+  return points.map(point => {
+    const width = point.text.length * CHAR_WIDTH
+    const left = point.x + 8
+    const right = left + width
+
+    for (const offset of LANES) {
+      const labelY = point.y + offset
+      const box = { left, right, top: labelY - LABEL_HEIGHT, bottom: labelY }
+      if (!overlaps(box)) {
+        placed.push(box)
+        return { x: left, y: labelY, text: point.text }
+      }
+    }
+
+    const labelY = point.y + LANES[LANES.length - 1]
+    placed.push({ left, right, top: labelY - LABEL_HEIGHT, bottom: labelY })
+    return { x: left, y: labelY, text: point.text }
+  })
+}
+
 type Props = {
   gaps: GapItem[]
   ideaId: string
@@ -76,19 +117,37 @@ export function MarketGapResults({ gaps, ideaId, confidence, confidenceReason, n
           <line x1="40" y1="20" x2="40" y2="180" stroke="var(--line-3)" />
           <text x="235" y="208" textAnchor="middle" fill="var(--fg-3)" fontSize="10">Market competition (low → high)</text>
           <text x="10" y="100" transform="rotate(-90 10 100)" textAnchor="middle" fill="var(--fg-3)" fontSize="10">Opportunity size (low → high)</text>
-          {gaps.map((g, idx) => {
-            const x = 40 + (idx / Math.max(gaps.length - 1, 1)) * 380
-            const impactScore = { high: 85, medium: 55, low: 30 }[impactFromGap(g)]
-            const y = 180 - (impactScore / 100) * 150
-            return (
-              <g key={`${g.title || idx}`}>
-                <circle cx={x} cy={y} r={6} fill="var(--accent)" />
-                <text x={x + 8} y={y - 8} fill="var(--fg)" fontSize="10">
-                  {(g.title || `Opp ${idx + 1}`).slice(0, 22)}
-                </text>
-              </g>
-            )
-          })}
+          {(() => {
+            const points = gaps.map((g, idx) => {
+              const x = 40 + (idx / Math.max(gaps.length - 1, 1)) * 380
+              const impactScore = { high: 85, medium: 55, low: 30 }[impactFromGap(g)]
+              const y = 180 - (impactScore / 100) * 150
+              return { x, y, text: (g.title || `Opp ${idx + 1}`).slice(0, 22) }
+            })
+            const labels = layoutOpportunityLabels(points)
+            return points.map((point, idx) => {
+              const label = labels[idx]
+              const isOffset = Math.abs(label.y - (point.y - 8)) > 2
+              return (
+                <g key={`${gaps[idx].title || idx}`}>
+                  {isOffset && (
+                    <line
+                      x1={point.x + 6}
+                      y1={point.y}
+                      x2={label.x - 2}
+                      y2={label.y - 3}
+                      stroke="var(--line-3)"
+                      strokeWidth={0.75}
+                    />
+                  )}
+                  <circle cx={point.x} cy={point.y} r={6} fill="var(--accent)" />
+                  <text x={label.x} y={label.y} fill="var(--fg)" fontSize="10">
+                    {label.text}
+                  </text>
+                </g>
+              )
+            })
+          })()}
         </svg>
       </div>
       {gaps.map((g, i) => {
