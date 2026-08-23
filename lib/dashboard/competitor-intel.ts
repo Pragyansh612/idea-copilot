@@ -1,5 +1,6 @@
 import type { Feature } from '@/lib/api/idea'
 import { countStoredGapOpportunities } from '@/lib/dashboard/gap-storage'
+import type { ConfidenceLevel } from '@/lib/dashboard/gaps'
 
 export type CompetitorRow = Record<string, unknown>
 
@@ -60,10 +61,17 @@ export type StrategicAnalysis = {
   summary?: string
   /** Present when the backend short-circuits with no competitor data yet. */
   message?: string
+  /** Set when some/all backing competitors had blocked/thin scrapes — same gating as Market Gap Analysis. */
+  confidence?: ConfidenceLevel
+  confidence_reason?: string
 }
 
 function asStringArray(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+}
+
+function isConfidenceLevel(v: unknown): v is ConfidenceLevel {
+  return v === 'high' || v === 'medium' || v === 'low'
 }
 
 export function normalizeStrategicAnalysis(data: unknown): StrategicAnalysis {
@@ -81,6 +89,8 @@ export function normalizeStrategicAnalysis(data: unknown): StrategicAnalysis {
     fastest_differentiator: typeof o.fastest_differentiator === 'string' ? o.fastest_differentiator : undefined,
     summary: typeof o.summary === 'string' ? o.summary : undefined,
     message: typeof o.message === 'string' ? o.message : undefined,
+    confidence: isConfidenceLevel(o.confidence) ? o.confidence : undefined,
+    confidence_reason: typeof o.confidence_reason === 'string' ? o.confidence_reason : undefined,
   }
 }
 

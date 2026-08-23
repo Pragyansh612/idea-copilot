@@ -38,6 +38,10 @@ export function StrategicInsightsCard({ analysis, loading, onGenerate, onDiscove
         </div>
       )}
 
+      {analysis && !analysis.message && analysis.confidence === 'medium' && analysis.confidence_reason && (
+        <p style={{ color: 'var(--fg-3)', fontSize: 12.5, marginTop: 10 }}>{analysis.confidence_reason}</p>
+      )}
+
       {analysis && !analysis.message && (
         <div className="ci-strat-sections">
           <div className="ci-strat-block">

@@ -1,5 +1,6 @@
 'use client'
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import {
@@ -38,6 +39,16 @@ import * as DI from '@/components/dashboard/Icons'
 
 const VALID_TABS = ['overview', 'intelligence', 'roadmap', 'copilot', 'discussion', 'attachments'] as const
 const SUGGESTION_TYPES: AIGenerateRequest['suggestion_type'][] = ['features', 'phases', 'improvements', 'marketing', 'validation']
+
+const credentialInputStyle: CSSProperties = {
+  padding: '8px 10px',
+  borderRadius: 8,
+  border: '1px solid var(--line-2)',
+  background: 'var(--bg-2)',
+  color: 'var(--fg)',
+  font: 'inherit',
+  fontSize: 14,
+}
 
 export default function IdeaDetailPage() {
   return (
@@ -79,7 +90,14 @@ function IdeaDetailContent() {
   const [marketGapDone, setMarketGapDone] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [toastVariant, setToastVariant] = useState<'success' | 'error'>('success')
-  const [exportBusy, setExportBusy] = useState<'markdown' | 'pdf' | null>(null)
+  const [exportBusy, setExportBusy] = useState<'markdown' | 'pdf' | 'notion' | 'trello' | null>(null)
+  const [notionFormOpen, setNotionFormOpen] = useState(false)
+  const [notionApiKey, setNotionApiKey] = useState('')
+  const [notionPageId, setNotionPageId] = useState('')
+  const [trelloFormOpen, setTrelloFormOpen] = useState(false)
+  const [trelloApiKey, setTrelloApiKey] = useState('')
+  const [trelloToken, setTrelloToken] = useState('')
+  const [trelloBoard, setTrelloBoard] = useState('MyIdeaCopilot Export')
 
   // Action-level failures (toggling a feature, generating suggestions, etc.) surface as a
   // dismissible toast — only the initial `load()` failure (see `error` state) should blank
@@ -449,6 +467,40 @@ function IdeaDetailContent() {
     }
   }
 
+  async function exportToNotion() {
+    if (!notionApiKey.trim() || !notionPageId.trim()) {
+      showError('Notion integration token and parent page ID are both required.')
+      return
+    }
+    try {
+      setExportBusy('notion')
+      const { pagesCreated } = await ExportAPI.exportNotion(ideaId, notionApiKey.trim(), notionPageId.trim())
+      showSuccess(`Exported to Notion — ${pagesCreated} page${pagesCreated === 1 ? '' : 's'} created.`)
+      setNotionFormOpen(false)
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Notion export failed')
+    } finally {
+      setExportBusy(null)
+    }
+  }
+
+  async function exportToTrello() {
+    if (!trelloApiKey.trim() || !trelloToken.trim()) {
+      showError('Trello API key and token are both required.')
+      return
+    }
+    try {
+      setExportBusy('trello')
+      const { cardsCreated } = await ExportAPI.exportTrello(ideaId, trelloApiKey.trim(), trelloToken.trim(), trelloBoard.trim())
+      showSuccess(`Exported to Trello — ${cardsCreated} card${cardsCreated === 1 ? '' : 's'} created.`)
+      setTrelloFormOpen(false)
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Trello export failed')
+    } finally {
+      setExportBusy(null)
+    }
+  }
+
   async function saveDescription() {
     const text = descriptionDraft.trim()
     if (!text) return
@@ -731,10 +783,90 @@ function IdeaDetailContent() {
             <button type="button" className="btn-sm ghost" onClick={() => void downloadPdfExport()} disabled={exportBusy !== null}>
               <DI.Doc /> {exportBusy === 'pdf' ? 'Exporting…' : 'PDF'}
             </button>
+            <button
+              type="button"
+              className="btn-sm ghost"
+              onClick={() => { setNotionFormOpen(v => !v); setTrelloFormOpen(false) }}
+              disabled={exportBusy !== null}
+              aria-expanded={notionFormOpen}
+            >
+              <DI.Doc /> Notion
+            </button>
+            <button
+              type="button"
+              className="btn-sm ghost"
+              onClick={() => { setTrelloFormOpen(v => !v); setNotionFormOpen(false) }}
+              disabled={exportBusy !== null}
+              aria-expanded={trelloFormOpen}
+            >
+              <DI.Doc /> Trello
+            </button>
             <button type="button" className="btn-sm ghost" onClick={() => router.push(routes.copilotForIdea(ideaId))}>
               <DI.Spark/> Draft with Copilot
             </button>
           </div>
+
+          {notionFormOpen && (
+            <div style={{ display: 'grid', gap: 8, marginTop: 12, maxWidth: 420 }}>
+              <p style={{ color: 'var(--fg-3)', fontSize: 12, margin: 0 }}>
+                Paste a Notion internal integration token (share your target page with it first) and the parent page ID to export into. Nothing is saved — sent only for this export.
+              </p>
+              <input
+                type="password"
+                placeholder="Notion integration token (secret_...)"
+                value={notionApiKey}
+                onChange={e => setNotionApiKey(e.target.value)}
+                autoComplete="off"
+                style={credentialInputStyle}
+              />
+              <input
+                type="text"
+                placeholder="Parent page ID"
+                value={notionPageId}
+                onChange={e => setNotionPageId(e.target.value)}
+                autoComplete="off"
+                style={credentialInputStyle}
+              />
+              <button type="button" className="btn-sm solid" onClick={() => void exportToNotion()} disabled={exportBusy !== null} style={{ justifySelf: 'start' }}>
+                <DI.Export /> {exportBusy === 'notion' ? 'Exporting…' : 'Export to Notion'}
+              </button>
+            </div>
+          )}
+
+          {trelloFormOpen && (
+            <div style={{ display: 'grid', gap: 8, marginTop: 12, maxWidth: 420 }}>
+              <p style={{ color: 'var(--fg-3)', fontSize: 12, margin: 0 }}>
+                Paste a Trello API key and token (from trello.com/app-key). Nothing is saved — sent only for this export.
+              </p>
+              <input
+                type="password"
+                placeholder="Trello API key"
+                value={trelloApiKey}
+                onChange={e => setTrelloApiKey(e.target.value)}
+                autoComplete="off"
+                style={credentialInputStyle}
+              />
+              <input
+                type="password"
+                placeholder="Trello token"
+                value={trelloToken}
+                onChange={e => setTrelloToken(e.target.value)}
+                autoComplete="off"
+                style={credentialInputStyle}
+              />
+              <input
+                type="text"
+                placeholder="Board name"
+                value={trelloBoard}
+                onChange={e => setTrelloBoard(e.target.value)}
+                autoComplete="off"
+                style={credentialInputStyle}
+              />
+              <button type="button" className="btn-sm solid" onClick={() => void exportToTrello()} disabled={exportBusy !== null} style={{ justifySelf: 'start' }}>
+                <DI.Export /> {exportBusy === 'trello' ? 'Exporting…' : 'Export to Trello'}
+              </button>
+            </div>
+          )}
         </div>
       )}
 
