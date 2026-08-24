@@ -19,6 +19,7 @@ import { AttachmentAPI, type Attachment } from '@/lib/api/attachments'
 import { ExportAPI } from '@/lib/api/export'
 import { CopilotAPI } from '@/lib/api/copilot'
 import { CommentsSection } from '@/components/dashboard/CommentsSection'
+import { MarkdownMessage } from '@/components/dashboard/MarkdownMessage'
 import { ShareModal } from '@/components/dashboard/ShareModal'
 import { Toast } from '@/components/dashboard/Toast'
 import { type GapItem } from '@/lib/dashboard/gaps'
@@ -1560,7 +1561,9 @@ function IdeaDetailContent() {
                     <div key={idx} className={`cp-msg ${m.role === 'user' ? 'user' : 'ai'}`}>
                       <div className="av" />
                       <div>
-                        <div className="cp-bubble" style={{ whiteSpace: 'pre-wrap' }}>{m.text}</div>
+                        <div className="cp-bubble" style={m.role === 'user' ? { whiteSpace: 'pre-wrap' } : undefined}>
+                          {m.role === 'user' ? m.text : <MarkdownMessage content={m.text} />}
+                        </div>
                         {m.failed && (
                           <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
                             <span style={{ fontSize: 12.5, color: 'var(--warn)' }}>Message failed to send.</span>

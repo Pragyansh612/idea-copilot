@@ -9,11 +9,13 @@ import { StrategicInsightsCard } from '@/components/dashboard/StrategicInsightsC
 import { PageEmpty, PageError, PageLoading } from '@/components/dashboard/PageState'
 import { Toast } from '@/components/dashboard/Toast'
 import { captureError } from '@/lib/monitoring'
+import { ApiError } from '@/lib/api/http'
 import * as DI from '@/components/dashboard/Icons'
 import {
   CompetitorAPI,
   FeatureAPI,
   IdeaAPI,
+  type DiscoverCompetitorsResult,
   type Feature,
   type Idea,
 } from '@/lib/api/idea'
@@ -53,6 +55,29 @@ const FLOW_STEPS = [
   { id: 'opportunities', num: 6, label: 'Opportunity cards' },
   { id: 'strategic', num: 7, label: 'Strategic insights' },
 ] as const
+
+/**
+ * Poll for the result of a discovery run this tab didn't start (the backend
+ * said one was already in progress for this idea). Discovery normally takes
+ * up to ~160s synchronously, so poll generously before giving up.
+ */
+async function waitForRunningDiscovery(ideaId: string): Promise<DiscoverCompetitorsResult> {
+  const pollIntervalMs = 5_000
+  const maxWaitMs = 180_000
+  const deadline = Date.now() + maxWaitMs
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, pollIntervalMs))
+    try {
+      const competitors = await CompetitorAPI.getCompetitorResearch(ideaId)
+      if (Array.isArray(competitors) && competitors.length > 0) {
+        return { success: true, discovered: competitors.length, competitors }
+      }
+    } catch {
+      // Transient — keep polling until the deadline.
+    }
+  }
+  throw new Error('Competitor discovery is taking longer than expected. Refresh in a moment to check its progress.')
+}
 
 function IntelligenceContent() {
   const router = useRouter()
@@ -284,7 +309,20 @@ function IntelligenceContent() {
       setBusyAction('discover')
       setActionError(null)
       await startDiscoverJob(ideaId, async () => {
-        const result = await IdeaAPI.discoverCompetitors(ideaId)
+        let result: DiscoverCompetitorsResult
+        try {
+          result = await IdeaAPI.discoverCompetitors(ideaId)
+        } catch (err) {
+          // A 409 here means a discovery run for this idea is already in
+          // flight elsewhere (e.g. a duplicate trigger) — the run itself
+          // isn't broken, so wait for it and use its real result instead of
+          // surfacing a false "Discovery failed" while it's still working.
+          if (err instanceof ApiError && err.errorType === 'operation_in_progress') {
+            result = await waitForRunningDiscovery(ideaId)
+          } else {
+            throw err
+          }
+        }
         await loadIdeaIntel(ideaId)
         await loadWorkspaceAggregates(ideas.slice(0, 20))
         return result

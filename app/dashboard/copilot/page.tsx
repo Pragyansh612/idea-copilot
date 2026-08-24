@@ -29,6 +29,7 @@ import {
   type ReportSection,
 } from '@/lib/copilot/opinionated-copilot'
 import { PageError, PageLoading } from '@/components/dashboard/PageState'
+import { MarkdownMessage } from '@/components/dashboard/MarkdownMessage'
 import { timeAgo } from '@/lib/dashboard/format'
 import { captureError } from '@/lib/monitoring'
 import { routes } from '@/lib/routes'
@@ -421,8 +422,10 @@ function CopilotPageInner() {
                       <div className="cp-report-fallback" style={{ whiteSpace: 'pre-wrap' }}>{m.content}</div>
                     </div>
                   ) : (
-                    <div className="cp-bubble" style={{ whiteSpace: 'pre-wrap' }}>
-                      {m.role === 'user' && m.display ? m.display : m.content}
+                    <div className="cp-bubble" style={m.role === 'user' ? { whiteSpace: 'pre-wrap' } : undefined}>
+                      {m.role === 'user'
+                        ? (m.display ? m.display : m.content)
+                        : <MarkdownMessage content={m.content} />}
                     </div>
                   )}
                   {m.role === 'user' && m.failed && (

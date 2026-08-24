@@ -3,6 +3,16 @@ import { syncAuthCookies } from '@/lib/auth/sync-cookies'
 import { TokenManager } from '@/lib/auth/tokens'
 import { parseApiError } from '@/lib/api/parse-error'
 
+/** An API error that carries the backend's `error_type` (e.g. "operation_in_progress"), so callers can branch on it instead of matching message text. */
+export class ApiError extends Error {
+  errorType?: string
+  constructor(message: string, errorType?: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.errorType = errorType
+  }
+}
+
 function applyRefreshedTokens(accessToken: string, refreshToken: string): void {
   TokenManager.setTokens(accessToken, refreshToken)
   void syncAuthCookies(accessToken, refreshToken).catch(() => {
@@ -38,7 +48,8 @@ export async function fetchWithAuth(url: string, options: RequestInit = {}) {
     if (response.status === 401 && typeof window !== 'undefined') {
       await redirectToLogin(window.location.pathname)
     }
-    throw new Error(parseApiError(error))
+    const errorType = error && typeof error === 'object' ? (error as { error_type?: string }).error_type : undefined
+    throw new ApiError(parseApiError(error), errorType)
   }
 
   if (response.status === 204) {

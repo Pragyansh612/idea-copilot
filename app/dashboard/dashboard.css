@@ -1457,6 +1457,50 @@ body.app-body {
 }
 .cp-bubble .src .s b { color: var(--accent); }
 
+.cp-markdown p { margin: 0 0 10px; }
+.cp-markdown p:last-child { margin-bottom: 0; }
+.cp-markdown h1, .cp-markdown h2, .cp-markdown h3, .cp-markdown h4 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--fg);
+}
+.cp-markdown h1:first-child, .cp-markdown h2:first-child,
+.cp-markdown h3:first-child, .cp-markdown h4:first-child { margin-top: 0; }
+.cp-markdown h1 { font-size: 17px; }
+.cp-markdown h2 { font-size: 16px; }
+.cp-markdown h3, .cp-markdown h4 { font-size: 14.5px; }
+.cp-markdown ul, .cp-markdown ol { margin: 0 0 10px; padding-left: 20px; }
+.cp-markdown li { margin-bottom: 4px; }
+.cp-markdown li:last-child { margin-bottom: 0; }
+.cp-markdown li > p { margin-bottom: 4px; }
+.cp-markdown code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.cp-markdown pre {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.cp-markdown pre code { background: none; border: none; padding: 0; }
+.cp-markdown blockquote {
+  margin: 0 0 10px;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent-line);
+  color: var(--fg-2);
+}
+.cp-markdown a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.cp-markdown table { border-collapse: collapse; margin: 0 0 10px; font-size: 0.95em; }
+.cp-markdown th, .cp-markdown td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; }
+
 .cp-card-inline {
   margin-top: 12px;
   padding: 14px;
